@@ -663,6 +663,11 @@ Codey:"""
         # Parse the instruction to extract individual steps
         steps = self._extract_steps(user_input)
 
+        # Debug: show what was extracted
+        print(f"\n[DEBUG] Extracted {len(steps)} step(s) from input")
+        for i, step in enumerate(steps, 1):
+            print(f"[DEBUG] Step {i}: {step}")
+
         if not steps:
             return "I couldn't break down that instruction. Please try simpler, one-step commands."
 
@@ -671,14 +676,16 @@ Codey:"""
             print(f"  {i}. {step['description']}")
 
         print("\n━" * 60)
+        print("\nℹ️  You'll be asked to confirm EACH step before it executes.")
+        print("━" * 60)
 
-        # Ask for confirmation to proceed
+        # Ask for confirmation to proceed with the plan
         try:
-            proceed = input("\n🚀 Start automatic execution? [y/n]: ").strip().lower()
+            proceed = input("\n🚀 Ready to start? [y/n]: ").strip().lower()
             if proceed not in ['y', 'yes']:
-                return "Automatic execution cancelled."
+                return "Execution cancelled."
         except (KeyboardInterrupt, EOFError):
-            return "\nAutomatic execution cancelled."
+            return "\nExecution cancelled."
 
         print("\n" + "━" * 60)
         print("Starting execution...\n")
@@ -700,34 +707,59 @@ Codey:"""
         # Show initial todo list
         show_todo_list()
 
+        # Track created files for cleanup
+        created_files = []
+        created_dirs = []
+
         # Execute each step
         for i, step in enumerate(steps):
-            print(f"\n▶️  Executing Step {i+1}/{len(steps)}...")
+            print(f"\n▶️  Step {i+1}/{len(steps)}: {step['description']}")
             print("─" * 60)
 
+            # ASK FOR CONFIRMATION BEFORE EXECUTING
             try:
-                # Execute the step
+                confirm = input(f"\n   Execute this step? [y/n]: ").strip().lower()
+                if confirm not in ['y', 'yes']:
+                    step_status[i] = '⊘'  # skipped
+                    print(f"   ⊘ Step {i+1} skipped")
+                    show_todo_list()
+                    continue
+            except (KeyboardInterrupt, EOFError):
+                # Mark remaining as skipped
+                for j in range(i, len(steps)):
+                    step_status[j] = '⊘'
+                break
+
+            # NOW execute the step
+            try:
                 result = self._execute_step(step)
+
+                # Track what was created
+                if result and result.get('success'):
+                    if step.get('type') == 'mkdir' and 'path' in result:
+                        created_dirs.append(result['path'])
+                    elif step.get('type') == 'clone' and 'path' in result:
+                        created_dirs.append(result['path'])
 
                 if result and 'success' in result:
                     if result['success']:
                         step_status[i] = '✅'  # completed
                         completed += 1
-                        print(f"\n✅ Step {i+1} completed!")
+                        print(f"\n   ✅ Step {i+1} completed!")
                     else:
                         step_status[i] = '❌'  # failed
                         failed += 1
-                        print(f"\n❌ Step {i+1} failed: {result.get('error', 'Unknown error')}")
+                        print(f"\n   ❌ Step {i+1} failed: {result.get('error', 'Unknown error')}")
 
                         # Show updated todo list
                         show_todo_list()
 
                         # Ask if should continue
-                        cont = input("\nContinue with remaining steps? [y/n]: ")
-                        if cont.lower() not in ['y', 'yes']:
+                        cont = input("\n   Continue with remaining steps? [y/n]: ").strip().lower()
+                        if cont not in ['y', 'yes']:
                             # Mark remaining as skipped
                             for j in range(i+1, len(steps)):
-                                step_status[j] = '⊘'  # skipped
+                                step_status[j] = '⊘'
                             break
                 else:
                     # String response from regular command
@@ -741,13 +773,13 @@ Codey:"""
             except Exception as e:
                 step_status[i] = '❌'
                 failed += 1
-                print(f"\n❌ Step {i+1} error: {str(e)}")
+                print(f"\n   ❌ Step {i+1} error: {str(e)}")
 
                 # Show updated todo list
                 show_todo_list()
 
-                cont = input("\nContinue with remaining steps? [y/n]: ")
-                if cont.lower() not in ['y', 'yes']:
+                cont = input("\n   Continue with remaining steps? [y/n]: ").strip().lower()
+                if cont not in ['y', 'yes']:
                     # Mark remaining as skipped
                     for j in range(i+1, len(steps)):
                         step_status[j] = '⊘'
@@ -764,7 +796,80 @@ Codey:"""
             print(f"   ⊘ Skipped: {skipped}/{len(steps)}")
         print("━" * 60)
 
+        # Offer cleanup if any steps completed
+        if completed > 0:
+            self._offer_cleanup(created_dirs)
+
         return f"\n✓ Automatic execution finished: {completed} completed, {failed} failed"
+
+    def _offer_cleanup(self, created_dirs):
+        """Offer to clean up temporary/unnecessary files after execution"""
+        print("\n" + "━" * 60)
+        print("🧹 CLEANUP CHECK")
+        print("━" * 60)
+
+        # Look for common temporary files
+        cleanup_candidates = []
+
+        for directory in created_dirs:
+            from pathlib import Path
+            dir_path = Path(directory)
+            if dir_path.exists():
+                # Check for common unnecessary files
+                temp_patterns = [
+                    '**/__pycache__',
+                    '**/*.pyc',
+                    '**/*.pyo',
+                    '**/.pytest_cache',
+                    '**/.DS_Store',
+                    '**/Thumbs.db',
+                    '**/*.log',
+                    '**/.git/logs',
+                    '**/.coverage',
+                    '**/node_modules/.cache',
+                    '**/.mypy_cache',
+                    '**/*.egg-info'
+                ]
+
+                for pattern in temp_patterns:
+                    matches = list(dir_path.glob(pattern))
+                    cleanup_candidates.extend(matches)
+
+        if cleanup_candidates:
+            print(f"\nFound {len(cleanup_candidates)} temporary/cache file(s):")
+            # Show first 10
+            for item in cleanup_candidates[:10]:
+                print(f"  - {item}")
+            if len(cleanup_candidates) > 10:
+                print(f"  ... and {len(cleanup_candidates) - 10} more")
+
+            print("\n These files are typically safe to delete and save space.")
+
+            try:
+                cleanup = input("\n🗑️  Delete these files? [y/n]: ").strip().lower()
+                if cleanup in ['y', 'yes']:
+                    deleted = 0
+                    for item in cleanup_candidates:
+                        try:
+                            if item.is_file():
+                                item.unlink()
+                                deleted += 1
+                            elif item.is_dir():
+                                import shutil
+                                shutil.rmtree(item)
+                                deleted += 1
+                        except Exception as e:
+                            print(f"   Warning: Couldn't delete {item}: {e}")
+
+                    print(f"\n   ✅ Cleaned up {deleted} item(s)")
+                else:
+                    print("\n   Cleanup skipped")
+            except (KeyboardInterrupt, EOFError):
+                print("\n   Cleanup skipped")
+        else:
+            print("\n✓ No temporary files found - already clean!")
+
+        print("━" * 60)
 
     def _extract_steps(self, user_input: str) -> list:
         """Extract individual steps from complex instruction"""
