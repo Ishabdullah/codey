@@ -86,6 +86,10 @@ class CodeyEngineV2:
         if user_input.lower() in ['info', 'system info', 'model info']:
             return self._show_system_info()
 
+        # Check if this is a complex multi-step instruction
+        if self._is_complex_instruction(user_input):
+            return self._handle_complex_instruction(user_input)
+
         # Parse the command
         parsed = self.parser.parse(user_input)
         action = parsed['action']
@@ -621,6 +625,202 @@ Codey:"""
         response += f"\nWorkspace: {self.config.workspace_dir}\n"
 
         return response
+
+    def _is_complex_instruction(self, user_input: str) -> bool:
+        """Detect if instruction contains multiple steps or is complex"""
+        # Indicators of complex instructions
+        complexity_indicators = [
+            # Multiple sentences or steps
+            len(user_input.split('.')) > 2,
+            len(user_input.split('\n')) > 2,
+
+            # Numbered/bulleted lists
+            any(user_input.strip().startswith(str(i)) for i in range(1, 10)),
+            '1.' in user_input or '2.' in user_input,
+
+            # Multiple actions
+            user_input.count(' then ') > 0,
+            user_input.count(' and then ') > 0,
+            user_input.count(' after ') > 0,
+
+            # Keywords suggesting multi-step tasks
+            'set up' in user_input.lower() and ('project' in user_input.lower() or 'environment' in user_input.lower()),
+            'follow these' in user_input.lower(),
+            'step by step' in user_input.lower(),
+
+            # Very long instructions (likely complex)
+            len(user_input) > 200 and any(word in user_input.lower() for word in ['create', 'install', 'clone', 'set up', 'configure'])
+        ]
+
+        return any(complexity_indicators)
+
+    def _handle_complex_instruction(self, user_input: str):
+        """Handle complex multi-step instructions by breaking them down automatically"""
+        print("\n🤖 Complex instruction detected - Breaking down into steps...")
+        print("━" * 60)
+
+        # Parse the instruction to extract individual steps
+        steps = self._extract_steps(user_input)
+
+        if not steps:
+            return "I couldn't break down that instruction. Please try simpler, one-step commands."
+
+        print(f"\n📋 Created {len(steps)} steps:\n")
+        for i, step in enumerate(steps, 1):
+            print(f"  {i}. {step['description']}")
+
+        print("\n━" * 60)
+        print("🚀 Starting automatic execution...\n")
+
+        # Execute each step
+        completed = 0
+        failed = 0
+
+        for i, step in enumerate(steps, 1):
+            print(f"\n[Step {i}/{len(steps)}] {step['description']}")
+            print("─" * 60)
+
+            try:
+                # Execute the step
+                result = self._execute_step(step)
+
+                if result and 'success' in result:
+                    if result['success']:
+                        print(f"✓ Step {i} completed")
+                        completed += 1
+                    else:
+                        print(f"✗ Step {i} failed: {result.get('error', 'Unknown error')}")
+                        failed += 1
+                        # Ask if should continue
+                        cont = input("\nContinue with remaining steps? [y/n]: ")
+                        if cont.lower() not in ['y', 'yes']:
+                            break
+                else:
+                    # String response from regular command
+                    print(result)
+                    completed += 1
+
+            except Exception as e:
+                print(f"✗ Step {i} error: {str(e)}")
+                failed += 1
+                cont = input("\nContinue with remaining steps? [y/n]: ")
+                if cont.lower() not in ['y', 'yes']:
+                    break
+
+        # Summary
+        print("\n" + "━" * 60)
+        print(f"📊 Execution Summary:")
+        print(f"   Completed: {completed}/{len(steps)}")
+        if failed > 0:
+            print(f"   Failed: {failed}/{len(steps)}")
+        print("━" * 60)
+
+        return f"\n✓ Automatic execution finished: {completed} completed, {failed} failed"
+
+    def _extract_steps(self, user_input: str) -> list:
+        """Extract individual steps from complex instruction"""
+        steps = []
+
+        # Try to parse numbered steps
+        lines = user_input.split('\n')
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+
+            # Check for numbered steps (1., 2., etc.)
+            for i in range(1, 20):
+                if line.startswith(f"{i}.") or line.startswith(f"{i})"):
+                    description = line.split('.', 1)[1].strip() if '.' in line else line.split(')', 1)[1].strip()
+                    step = self._parse_step_description(description)
+                    if step:
+                        steps.append(step)
+                    break
+
+        # If no numbered steps found, try to infer steps from keywords
+        if not steps:
+            steps = self._infer_steps_from_text(user_input)
+
+        return steps
+
+    def _parse_step_description(self, description: str) -> dict:
+        """Parse a step description into a command"""
+        desc_lower = description.lower()
+
+        # Detect command type
+        if 'create directory' in desc_lower or 'make directory' in desc_lower or 'mkdir' in desc_lower:
+            # Extract directory path
+            words = description.split()
+            for word in words:
+                if '/' in word or word.startswith('~'):
+                    return {'type': 'mkdir', 'path': word, 'description': description}
+
+        elif 'clone' in desc_lower and ('repository' in desc_lower or 'repo' in desc_lower or 'github' in desc_lower):
+            # Extract URL and destination
+            words = description.split()
+            url = None
+            dest = None
+            for word in words:
+                if 'github.com' in word or 'http' in word:
+                    url = word
+                elif '/' in word or word.startswith('~'):
+                    dest = word
+            if url:
+                return {'type': 'clone', 'url': url, 'destination': dest, 'description': description}
+
+        elif 'install' in desc_lower and ('dependencies' in desc_lower or 'requirements' in desc_lower or 'packages' in desc_lower):
+            return {'type': 'install', 'file': 'requirements.txt', 'description': description}
+
+        elif 'check for' in desc_lower or 'look for' in desc_lower:
+            return {'type': 'check', 'description': description}
+
+        # Default: treat as shell command
+        return {'type': 'general', 'description': description}
+
+    def _infer_steps_from_text(self, text: str) -> list:
+        """Infer steps from unstructured text"""
+        steps = []
+        text_lower = text.lower()
+
+        # Common patterns
+        if 'create' in text_lower and 'directory' in text_lower:
+            steps.append({'type': 'mkdir', 'description': 'Create project directory'})
+
+        if 'clone' in text_lower:
+            steps.append({'type': 'clone', 'description': 'Clone repository'})
+
+        if 'install' in text_lower and ('dependencies' in text_lower or 'requirements' in text_lower):
+            steps.append({'type': 'install', 'description': 'Install dependencies'})
+
+        return steps
+
+    def _execute_step(self, step: dict):
+        """Execute a single step based on its type"""
+        step_type = step.get('type')
+
+        if step_type == 'mkdir':
+            path = step.get('path', '~/project')
+            return self.shell_manager.create_directory(path)
+
+        elif step_type == 'clone':
+            url = step.get('url')
+            dest = step.get('destination')
+            if url:
+                return self.git_manager.clone_repository(url, dest)
+            else:
+                return {'success': False, 'error': 'No repository URL provided'}
+
+        elif step_type == 'install':
+            file = step.get('file', 'requirements.txt')
+            return self.shell_manager.install_requirements(file)
+
+        elif step_type == 'check':
+            # For check operations, just acknowledge
+            return {'success': True}
+
+        else:
+            # Try to execute as general command
+            return self.process_command(step['description'])
 
     def shutdown(self):
         """Clean shutdown"""
