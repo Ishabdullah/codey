@@ -32,15 +32,22 @@ class Config:
         self.max_tokens = config_data.get('max_tokens', 2048)
         self.context_size = config_data.get('context_size', 4096)
         self.n_gpu_layers = config_data.get('n_gpu_layers', 0)  # CPU only by default
+        self.n_threads = config_data.get('n_threads', 6)
+        self.n_threads_batch = config_data.get('n_threads_batch', 6)
 
         # Safety settings
         self.require_confirmation = config_data.get('require_confirmation', True)
         self.backup_before_edit = config_data.get('backup_before_edit', True)
+        self.auto_backup = config_data.get('auto_backup', True)
 
         # Perplexity API settings
         self.perplexity_api_key = config_data.get('perplexity_api_key', '')
         self.use_perplexity = config_data.get('use_perplexity', True)
         self.hybrid_mode = config_data.get('hybrid_mode', True)
+
+        # Feature toggles
+        self.git_enabled = config_data.get('git_enabled', True)
+        self.shell_enabled = config_data.get('shell_enabled', True)
 
         # Ensure directories exist
         for d in [self.model_dir, self.memory_dir, self.log_dir, self.workspace_dir]:

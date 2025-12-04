@@ -48,8 +48,8 @@ class ModelManager:
                 print(f"Auto-detected GPU: offloading {n_gpu_layers} layers to GPU")
 
             # Thread optimization for Snapdragon 8 Gen 3 (1x3.3GHz + 3x3.2GHz + 2x3.0GHz + 2x2.3GHz)
-            n_threads = self.config.get('n_threads', 6)  # Use performance cores
-            n_threads_batch = self.config.get('n_threads_batch', 6)
+            n_threads = self.config.n_threads  # Use performance cores
+            n_threads_batch = self.config.n_threads_batch
 
             self.model = Llama(
                 model_path=str(model_path),

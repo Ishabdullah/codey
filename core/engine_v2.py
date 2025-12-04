@@ -50,8 +50,8 @@ class CodeyEngineV2:
         print(f"\n✓ Codey initialized - Claude Code Edition")
         print(f"✓ Context: {self.config.context_size} tokens")
         print(f"✓ GPU layers: {self.config.n_gpu_layers}")
-        print(f"✓ Git enabled: {self.config.get('git_enabled', True)}")
-        print(f"✓ Shell enabled: {self.config.get('shell_enabled', True)}")
+        print(f"✓ Git enabled: {self.config.git_enabled}")
+        print(f"✓ Shell enabled: {self.config.shell_enabled}")
 
     def process_command(self, user_input):
         """Process a natural language command with hybrid reasoning"""
