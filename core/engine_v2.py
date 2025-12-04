@@ -17,6 +17,7 @@ from agents.perplexity_api import PerplexityAPI
 from agents.todo_planner import TodoPlanner
 from agents.debug_agent import DebugAgent
 from memory.store import MemoryStore
+from utils.cleanup import CleanupManager
 
 class CodeyEngineV2:
     """Enhanced engine with hybrid reasoning, git, shell, and Claude Code-like capabilities"""
@@ -44,6 +45,9 @@ class CodeyEngineV2:
         self.coding_agent = CodingAgent(self.model_manager, self.file_tools, self.config)
         self.todo_planner = TodoPlanner(self.config, self.model_manager, self.perplexity)
         self.debug_agent = DebugAgent(self.model_manager, self.file_tools, self.perplexity)
+
+        # Initialize cleanup manager
+        self.cleanup_manager = CleanupManager(self.config.workspace_dir)
 
         self.memory.start_session()
 
@@ -1070,7 +1074,19 @@ Codey:"""
             return self.process_command(step['description'])
 
     def shutdown(self):
-        """Clean shutdown"""
+        """Clean shutdown with automatic junk file cleanup"""
+        print("\nCleaning up workspace...")
+
+        # Clean up junk files
+        cleanup_result = self.cleanup_manager.cleanup_workspace()
+        if cleanup_result.get('success') and cleanup_result.get('cleaned') > 0:
+            print(f"✓ Removed {cleanup_result['cleaned']} junk file(s)")
+            for file in cleanup_result['files']:
+                print(f"  - {file}")
+
+        # Save state
         self.memory.save_memory()
         self.todo_planner._save_todos()
+
+        # Unload model
         self.model_manager.unload_model()

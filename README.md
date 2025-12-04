@@ -893,3 +893,36 @@ For issues, questions, or suggestions:
 ---
 
 **Happy Coding with Codey!** 🚀
+
+---
+
+## 🎮 GPU Acceleration (NEW!)
+
+**Status:** ✅ GPU build completed successfully!
+
+Codey now has GPU acceleration support built using OpenCL for the Adreno 750 GPU on Samsung S24 Ultra.
+
+### GPU Build Details
+- **Backend:** OpenCL with Adreno-optimized kernels
+- **GPU:** QUALCOMM Adreno 750 (Snapdragon 8 Gen 3)
+- **Performance:** 3-5x faster than CPU-only (expected)
+- **Documentation:** See `GPU_BUILD_GUIDE.md` for complete details
+
+### Quick Test
+```bash
+export LD_LIBRARY_PATH=/vendor/lib64:$LD_LIBRARY_PATH
+~/llama.cpp/build-android/bin/llama-cli \
+  -m ~/codey/LLM_Models/CodeLlama-7B-Instruct.Q4_K_M.gguf \
+  -ngl 35 --verbose
+```
+
+Look for "offloaded X/Y layers to GPU" in the output.
+
+### Features Added
+- ✅ **GPU-Accelerated llama.cpp**: Built with OpenCL + Adreno optimization
+- ✅ **Automatic Cleanup**: Junk files removed on exit
+- ✅ **Optimized Configuration**: Reduced context for faster inference
+- ✅ **Comprehensive Docs**: Step-by-step build guide included
+
+**Read `GPU_BUILD_GUIDE.md` for full setup instructions and `GPU_BUILD_SUCCESS.md` for build summary.**
+
