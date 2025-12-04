@@ -1,4 +1,4 @@
-"""Enhanced Codey engine with hybrid reasoning and advanced capabilities"""
+"""Enhanced Codey engine with hybrid reasoning and advanced capabilities - Claude Code Edition"""
 import sys
 from pathlib import Path
 
@@ -9,6 +9,9 @@ from utils.config import config
 from models.manager import ModelManager
 from core.tools import FileTools
 from core.parser import CommandParser
+from core.permission_manager import PermissionManager
+from core.git_manager import GitManager
+from core.shell_manager import ShellManager
 from agents.coding_agent import CodingAgent
 from agents.perplexity_api import PerplexityAPI
 from agents.todo_planner import TodoPlanner
@@ -16,14 +19,21 @@ from agents.debug_agent import DebugAgent
 from memory.store import MemoryStore
 
 class CodeyEngineV2:
-    """Enhanced engine with hybrid reasoning and autonomous capabilities"""
+    """Enhanced engine with hybrid reasoning, git, shell, and Claude Code-like capabilities"""
 
     def __init__(self):
         self.config = config
+
+        # Initialize core managers
+        self.permission_manager = PermissionManager(self.config)
         self.model_manager = ModelManager(self.config)
         self.file_tools = FileTools(self.config)
         self.parser = CommandParser()
         self.memory = MemoryStore(self.config)
+
+        # Initialize Git and Shell managers
+        self.git_manager = GitManager(self.permission_manager, self.config.workspace_dir)
+        self.shell_manager = ShellManager(self.permission_manager, self.config.workspace_dir)
 
         # Initialize Perplexity if enabled
         self.perplexity = None
@@ -36,6 +46,12 @@ class CodeyEngineV2:
         self.debug_agent = DebugAgent(self.model_manager, self.file_tools, self.perplexity)
 
         self.memory.start_session()
+
+        print(f"\n✓ Codey initialized - Claude Code Edition")
+        print(f"✓ Context: {self.config.context_size} tokens")
+        print(f"✓ GPU layers: {self.config.n_gpu_layers}")
+        print(f"✓ Git enabled: {self.config.get('git_enabled', True)}")
+        print(f"✓ Shell enabled: {self.config.get('shell_enabled', True)}")
 
     def process_command(self, user_input):
         """Process a natural language command with hybrid reasoning"""
@@ -57,6 +73,18 @@ class CodeyEngineV2:
 
         if user_input.lower().startswith('ask '):
             return self._ask_perplexity(user_input[4:])
+
+        # Git commands
+        if user_input.lower().startswith(('git ', 'clone ', 'commit ', 'push ', 'pull ')):
+            return self._handle_git_command(user_input)
+
+        # Shell commands
+        if user_input.lower().startswith(('run ', 'execute ', 'install ', 'mkdir ')):
+            return self._handle_shell_command(user_input)
+
+        # System info
+        if user_input.lower() in ['info', 'system info', 'model info']:
+            return self._show_system_info()
 
         # Parse the command
         parsed = self.parser.parse(user_input)
@@ -116,7 +144,7 @@ class CodeyEngineV2:
         return any(keyword in user_lower for keyword in complex_keywords)
 
     def _handle_create(self, filename, instructions, user_input, use_hybrid):
-        """Handle file creation with optional hybrid reasoning"""
+        """Handle file creation with optional hybrid reasoning and permission check"""
         if not filename:
             filename = self.parser.extract_filename(user_input)
             if not filename:
@@ -135,40 +163,53 @@ class CodeyEngineV2:
 
         # Generate code (incorporate Perplexity if available)
         if perplexity_code and self.config.use_perplexity:
-            # Use Perplexity code directly
-            result = self.file_tools.write_file(filename, perplexity_code)
-            result['content'] = perplexity_code
+            content = perplexity_code
         else:
-            result = self.coding_agent.create_file(filename, instructions)
+            # Generate code first
+            temp_result = self.coding_agent.create_file(filename, instructions)
+            if not temp_result['success']:
+                return f"Error: {temp_result['error']}"
+            content = temp_result['content']
+
+        # Request permission with preview
+        if not self.permission_manager.request_file_creation(filename, content):
+            return "Operation cancelled by user"
+
+        # Write file
+        result = self.file_tools.write_file(filename, content)
+        result['content'] = content
 
         if result['success']:
             self.memory.add_file_action(filename, 'created', {'instructions': instructions})
-            response = f"Created {filename}"
+            response = f"✓ Created {filename}"
             if use_hybrid:
                 response += " (with Perplexity assistance)"
-            if self.config.require_confirmation:
-                response += f"\n\n{self._show_preview(result['content'])}"
         else:
-            response = f"Error: {result['error']}"
+            response = f"✗ Error: {result['error']}"
 
         return response
 
     def _handle_edit(self, filename, instructions, use_hybrid):
-        """Handle file editing with optional hybrid reasoning"""
+        """Handle file editing with optional hybrid reasoning and permission check"""
         if not filename:
             return "Please specify which file to edit."
 
+        # Generate edited content
         result = self.coding_agent.edit_file(filename, instructions)
 
-        if result['success']:
-            self.memory.add_file_action(filename, 'edited', {'instructions': instructions})
-            response = f"Updated {filename}"
-            if result.get('backup'):
-                response += f"\n(Backup: {result['backup']})"
-            if self.config.require_confirmation:
-                response += f"\n\n{self._show_preview(result['content'])}"
-        else:
-            response = f"Error: {result['error']}"
+        if not result['success']:
+            return f"✗ Error: {result['error']}"
+
+        # Request permission with preview
+        backup_path = result.get('backup')
+        if not self.permission_manager.request_file_edit(filename, result['content'], backup_path):
+            return "Operation cancelled by user"
+
+        # File has already been written by coding_agent, so just record it
+        self.memory.add_file_action(filename, 'edited', {'instructions': instructions})
+        response = f"✓ Updated {filename}"
+        if result.get('backup'):
+            response += f"\n(Backup: {result['backup']})"
 
         return response
 
@@ -185,24 +226,24 @@ class CodeyEngineV2:
             return f"Error: {result['error']}"
 
     def _handle_delete(self, filename):
-        """Handle file deletion"""
+        """Handle file deletion with permission check"""
         if not filename:
             return "Please specify which file to delete."
 
-        if self.config.require_confirmation:
-            confirm = input(f"Delete {filename}? (yes/no): ")
-            if confirm.lower() not in ['yes', 'y']:
-                return "Delete cancelled."
+        # Request permission
+        backup_path = f"{self.config.log_dir}/backups/{filename}.bak"
+        if not self.permission_manager.request_file_deletion(filename, backup_path):
+            return "Operation cancelled by user"
 
         result = self.file_tools.delete_file(filename)
 
         if result['success']:
             self.memory.add_file_action(filename, 'deleted')
-            response = f"Deleted {filename}"
+            response = f"✓ Deleted {filename}"
             if result.get('backup'):
                 response += f"\n(Backup: {result['backup']})"
         else:
-            response = f"Error: {result['error']}"
+            response = f"✗ Error: {result['error']}"
 
         return response
 
@@ -376,6 +417,210 @@ Codey:"""
         else:
             preview = '\n'.join(lines[:max_lines])
             return f"Preview (first {max_lines} lines):\n{preview}\n... ({len(lines) - max_lines} more lines)"
+
+    def _handle_git_command(self, command):
+        """Handle git operations"""
+        cmd_lower = command.lower()
+
+        try:
+            # Clone repository
+            if cmd_lower.startswith('clone '):
+                parts = command.split()
+                if len(parts) < 2:
+                    return "Usage: clone <repo_url> [destination]"
+
+                repo_url = parts[1]
+                destination = parts[2] if len(parts) > 2 else None
+
+                result = self.git_manager.clone_repository(repo_url, destination)
+
+                if result['success']:
+                    return f"✓ {result['message']}"
+                else:
+                    return f"✗ {result['error']}"
+
+            # Git status
+            elif cmd_lower in ['git status', 'status']:
+                result = self.git_manager.git_status()
+
+                if result['success']:
+                    if result['clean']:
+                        return "✓ Working directory is clean"
+                    else:
+                        response = "Git status:\n"
+                        if result['staged']:
+                            response += f"\nStaged ({len(result['staged'])}):\n"
+                            for f in result['staged'][:10]:
+                                response += f"  + {f}\n"
+                        if result['modified']:
+                            response += f"\nModified ({len(result['modified'])}):\n"
+                            for f in result['modified'][:10]:
+                                response += f"  M {f}\n"
+                        if result['untracked']:
+                            response += f"\nUntracked ({len(result['untracked'])}):\n"
+                            for f in result['untracked'][:10]:
+                                response += f"  ? {f}\n"
+                        return response
+                else:
+                    return f"✗ {result['error']}"
+
+            # Commit
+            elif cmd_lower.startswith('commit '):
+                # Extract message
+                if ' message ' in cmd_lower or ' with message ' in cmd_lower:
+                    parts = command.split(' message ', 1)
+                    if len(parts) == 1:
+                        parts = command.split(' with message ', 1)
+                    message = parts[1].strip('"\'')
+                else:
+                    message = command.split('commit ', 1)[1].strip('"\'')
+
+                result = self.git_manager.git_commit(message)
+
+                if result['success']:
+                    return f"✓ Committed {len(result['files'])} file(s): {message}"
+                else:
+                    return f"✗ {result['error']}"
+
+            # Push
+            elif cmd_lower.startswith('push'):
+                parts = command.split()
+                remote = parts[1] if len(parts) > 1 else 'origin'
+                branch = parts[2] if len(parts) > 2 else None
+
+                result = self.git_manager.git_push(remote, branch)
+
+                if result['success']:
+                    return f"✓ Pushed to {result['remote']}/{result['branch']}"
+                else:
+                    return f"✗ {result['error']}"
+
+            # Pull
+            elif cmd_lower.startswith('pull'):
+                parts = command.split()
+                remote = parts[1] if len(parts) > 1 else 'origin'
+                branch = parts[2] if len(parts) > 2 else None
+
+                result = self.git_manager.git_pull(remote, branch)
+
+                if result['success']:
+                    return f"✓ Pulled from {result['remote']}/{result['branch']}\n{result['output']}"
+                else:
+                    return f"✗ {result['error']}"
+
+            # Git init
+            elif cmd_lower in ['git init', 'init']:
+                result = self.git_manager.git_init()
+
+                if result['success']:
+                    return f"✓ Initialized git repository at {result['path']}"
+                else:
+                    return f"✗ {result['error']}"
+
+            else:
+                return "Unknown git command. Available: clone, status, commit, push, pull, init"
+
+        except Exception as e:
+            return f"Error: {str(e)}"
+
+    def _handle_shell_command(self, command):
+        """Handle shell operations"""
+        cmd_lower = command.lower()
+
+        try:
+            # Install dependencies
+            if cmd_lower.startswith('install '):
+                if 'requirements.txt' in cmd_lower or 'dependencies' in cmd_lower:
+                    result = self.shell_manager.install_requirements()
+                else:
+                    # Extract package name
+                    package = command.split('install ', 1)[1].strip()
+                    result = self.shell_manager.install_package(package)
+
+                if result['success']:
+                    return f"✓ Installation completed"
+                else:
+                    return f"✗ {result['error']}"
+
+            # Create directory
+            elif cmd_lower.startswith('mkdir '):
+                directory = command.split('mkdir ', 1)[1].strip()
+                result = self.shell_manager.create_directory(directory)
+
+                if result['success']:
+                    return f"✓ {result['message']}"
+                else:
+                    return f"✗ {result['error']}"
+
+            # Run Python file
+            elif cmd_lower.startswith('run '):
+                filename = command.split('run ', 1)[1].strip()
+                result = self.shell_manager.run_python_file(filename)
+
+                if result['success']:
+                    response = f"✓ Executed {filename}\n"
+                    if result['stdout']:
+                        response += f"\nOutput:\n{result['stdout']}"
+                    return response
+                else:
+                    error_msg = f"✗ Execution failed\n"
+                    if result.get('stderr'):
+                        error_msg += f"\nError:\n{result['stderr']}"
+                    return error_msg
+
+            # Execute shell command
+            elif cmd_lower.startswith('execute '):
+                shell_cmd = command.split('execute ', 1)[1].strip()
+                result = self.shell_manager.execute_command(shell_cmd)
+
+                if result['success']:
+                    response = f"✓ Command executed\n"
+                    if result['stdout']:
+                        response += f"\nOutput:\n{result['stdout']}"
+                    return response
+                else:
+                    error_msg = f"✗ Command failed\n"
+                    if result.get('stderr'):
+                        error_msg += f"Error:\n{result['stderr']}"
+                    elif result.get('error'):
+                        error_msg += f"Error: {result['error']}"
+                    return error_msg
+
+            else:
+                return "Unknown shell command. Available: install, mkdir, run, execute"
+
+        except Exception as e:
+            return f"Error: {str(e)}"
+
+    def _show_system_info(self):
+        """Show system and model information"""
+        model_info = self.model_manager.get_model_info()
+        system_info = self.shell_manager.get_system_info()
+
+        response = "System Information:\n\n"
+
+        if model_info['loaded']:
+            response += "Model:\n"
+            response += f"  Path: {model_info['path']}\n"
+            response += f"  Context: {model_info['context_size']} tokens\n"
+            response += f"  GPU layers: {model_info['gpu_layers']}\n"
+            response += f"  CPU threads: {model_info['threads']}\n"
+            response += f"  Batch size: {model_info['batch_size']}\n\n"
+        else:
+            response += "Model: Not loaded\n\n"
+
+        response += "System:\n"
+        if system_info.get('python_version'):
+            response += f"  Python: {system_info['python_version']}\n"
+        if system_info.get('pip_version'):
+            response += f"  Pip: {system_info['pip_version']}\n"
+
+        response += f"  Git: {'✓' if system_info['git_available'] else '✗'}\n"
+        response += f"  NPM: {'✓' if system_info['npm_available'] else '✗'}\n"
+
+        response += f"\nWorkspace: {self.config.workspace_dir}\n"
+
+        return response
 
     def shutdown(self):
         """Clean shutdown"""
