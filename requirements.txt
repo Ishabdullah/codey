@@ -1,0 +1,16 @@
+# Codey Requirements
+
+# Core dependency - llama.cpp Python bindings
+llama-cpp-python>=0.2.0
+
+# No additional dependencies required!
+# - Perplexity API uses urllib (built-in)
+# - All other functionality uses Python standard library
+
+# Optional: For faster JSON processing
+# ujson>=5.0.0
+
+# Development dependencies (optional)
+# pytest>=7.0.0
+# black>=22.0.0
+# flake8>=5.0.0

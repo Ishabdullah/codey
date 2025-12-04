@@ -1,0 +1,16 @@
+{
+  "model_dir": "/data/data/com.termux/files/home/codey/LLM_Models",
+  "model_name": "CodeLlama-7B-Instruct.Q4_K_M.gguf",
+  "memory_dir": "/data/data/com.termux/files/home/codey/memory",
+  "log_dir": "/data/data/com.termux/files/home/codey/logs",
+  "workspace_dir": "/data/data/com.termux/files/home/codey/workspace",
+  "temperature": 0.3,
+  "max_tokens": 2048,
+  "context_size": 4096,
+  "n_gpu_layers": 0,
+  "require_confirmation": true,
+  "backup_before_edit": true,
+  "perplexity_api_key": "your-perplexity-api-key-here",
+  "use_perplexity": true,
+  "hybrid_mode": true
+}
