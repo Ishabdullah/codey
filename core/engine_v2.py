@@ -940,25 +940,59 @@ Codey:"""
         desc_lower = description.lower()
 
         # Detect command type
-        if 'create directory' in desc_lower or 'make directory' in desc_lower or 'mkdir' in desc_lower:
-            # Extract directory path
+        if 'create directory' in desc_lower or 'make directory' in desc_lower or 'mkdir' in desc_lower or ('create' in desc_lower and 'directory' in desc_lower):
+            # Extract directory path or name
+            import re
+
+            # Look for "called X" or "named X" patterns
+            called_match = re.search(r'(?:called|named)\s+(\w+)', description, re.IGNORECASE)
+            if called_match:
+                dir_name = called_match.group(1)
+                # Determine if it should be in home or workspace
+                path = f"~/{dir_name}"
+                return {'type': 'mkdir', 'path': path, 'description': f'Create directory {path}'}
+
+            # Look for explicit paths
             words = description.split()
             for word in words:
                 if '/' in word or word.startswith('~'):
                     return {'type': 'mkdir', 'path': word, 'description': description}
 
-        elif 'clone' in desc_lower and ('repository' in desc_lower or 'repo' in desc_lower or 'github' in desc_lower):
+            # Default to generic if no name found
+            return {'type': 'mkdir', 'description': description}
+
+        elif 'clone' in desc_lower and ('repository' in desc_lower or 'repo' in desc_lower or 'github' in desc_lower or 'http' in desc_lower):
             # Extract URL and destination
-            words = description.split()
-            url = None
-            dest = None
-            for word in words:
-                if 'github.com' in word or 'http' in word:
-                    url = word
-                elif '/' in word or word.startswith('~'):
-                    dest = word
-            if url:
-                return {'type': 'clone', 'url': url, 'destination': dest, 'description': description}
+            import re
+
+            # Look for GitHub URLs or any http(s) URLs
+            url_match = re.search(r'https?://[^\s]+', description)
+            if url_match:
+                url = url_match.group(0)
+
+                # Look for "into X" or "to X" patterns for destination
+                dest = None
+                into_match = re.search(r'(?:into|to)\s+(?:the\s+)?(?:new\s+)?(?:directory\s+)?(?:called\s+)?(\S+)', description, re.IGNORECASE)
+                if into_match:
+                    dest_name = into_match.group(1).rstrip('.,;')
+                    # Check if it's a path or just a name
+                    if '/' in dest_name or dest_name.startswith('~'):
+                        dest = dest_name
+                    else:
+                        dest = f"~/{dest_name}"
+
+                # Also check for explicit paths in words
+                if not dest:
+                    words = description.split()
+                    for word in words:
+                        if ('/' in word or word.startswith('~')) and word != url:
+                            dest = word
+                            break
+
+                return {'type': 'clone', 'url': url, 'destination': dest, 'description': f'Clone {url} to {dest}' if dest else f'Clone {url}'}
+
+            # No URL found
+            return {'type': 'clone', 'description': description}
 
         elif 'install' in desc_lower and ('dependencies' in desc_lower or 'requirements' in desc_lower or 'packages' in desc_lower):
             return {'type': 'install', 'file': 'requirements.txt', 'description': description}
@@ -974,15 +1008,26 @@ Codey:"""
         steps = []
         text_lower = text.lower()
 
-        # Common patterns
+        # Parse the full text to extract directory, URL, etc.
+        # Use _parse_step_description to intelligently parse the user's request
+
+        # Check for directory creation
         if 'create' in text_lower and 'directory' in text_lower:
-            steps.append({'type': 'mkdir', 'description': 'Create project directory'})
+            step = self._parse_step_description(text)
+            if step:
+                steps.append(step)
 
+        # Check for clone operation
         if 'clone' in text_lower:
-            steps.append({'type': 'clone', 'description': 'Clone repository'})
+            step = self._parse_step_description(text)
+            if step and step.get('type') == 'clone':
+                steps.append(step)
 
+        # Check for install operation
         if 'install' in text_lower and ('dependencies' in text_lower or 'requirements' in text_lower):
-            steps.append({'type': 'install', 'description': 'Install dependencies'})
+            step = self._parse_step_description(text)
+            if step:
+                steps.append(step)
 
         return steps
 

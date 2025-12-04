@@ -10,7 +10,7 @@ class PerplexityAPI:
     def __init__(self, api_key: str):
         self.api_key = api_key
         self.api_url = "https://api.perplexity.ai/chat/completions"
-        self.model = "llama-3.1-sonar-small-128k-online"  # Fast online model
+        self.model = "sonar"  # Lightweight, grounded search model (2025)
 
     def _make_request(self, messages: list, max_tokens: int = 1024) -> Optional[str]:
         """Make a request to Perplexity API"""
