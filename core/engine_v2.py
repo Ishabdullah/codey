@@ -670,7 +670,17 @@ Codey:"""
             print(f"  {i}. {step['description']}")
 
         print("\n━" * 60)
-        print("🚀 Starting automatic execution...\n")
+
+        # Ask for confirmation to proceed
+        try:
+            proceed = input("\n🚀 Start automatic execution? [y/n]: ").strip().lower()
+            if proceed not in ['y', 'yes']:
+                return "Automatic execution cancelled."
+        except (KeyboardInterrupt, EOFError):
+            return "\nAutomatic execution cancelled."
+
+        print("\n" + "━" * 60)
+        print("Starting execution...\n")
 
         # Execute each step
         completed = 0
@@ -723,18 +733,28 @@ Codey:"""
 
         # Try to parse numbered steps
         lines = user_input.split('\n')
+
         for line in lines:
             line = line.strip()
             if not line:
                 continue
 
-            # Check for numbered steps (1., 2., etc.)
+            # Check for numbered steps (1., 2., etc.) - be more flexible
+            matched = False
             for i in range(1, 20):
-                if line.startswith(f"{i}.") or line.startswith(f"{i})"):
-                    description = line.split('.', 1)[1].strip() if '.' in line else line.split(')', 1)[1].strip()
-                    step = self._parse_step_description(description)
-                    if step:
-                        steps.append(step)
+                # Try different formats: "1.", "1)", "1 -", "1:"
+                for separator in ['.', ')', ' -', ':']:
+                    pattern = f"{i}{separator}"
+                    if line.startswith(pattern):
+                        # Extract description after the number
+                        description = line[len(pattern):].strip()
+                        if description:  # Only add if there's actual content
+                            step = self._parse_step_description(description)
+                            if step:
+                                steps.append(step)
+                        matched = True
+                        break
+                if matched:
                     break
 
         # If no numbered steps found, try to infer steps from keywords
@@ -806,13 +826,23 @@ Codey:"""
             url = step.get('url')
             dest = step.get('destination')
             if url:
-                return self.git_manager.clone_repository(url, dest)
+                result = self.git_manager.clone_repository(url, dest)
+                # Store the destination for later steps (like install)
+                if result.get('success') and dest:
+                    self._last_clone_dest = dest
+                return result
             else:
                 return {'success': False, 'error': 'No repository URL provided'}
 
         elif step_type == 'install':
-            file = step.get('file', 'requirements.txt')
-            return self.shell_manager.install_requirements(file)
+            # Try to find requirements.txt in the last cloned directory
+            cwd = getattr(self, '_last_clone_dest', None)
+            if cwd:
+                # Install in the cloned directory
+                return self.shell_manager.install_requirements(cwd=cwd)
+            else:
+                # Fall back to workspace
+                return self.shell_manager.install_requirements()
 
         elif step_type == 'check':
             # For check operations, just acknowledge
