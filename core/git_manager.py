@@ -14,9 +14,14 @@ class GitManager:
     def clone_repository(self, repo_url: str, destination: str = None) -> Dict:
         """Clone a git repository"""
         try:
-            # Determine destination
+            # Determine destination - support absolute paths and ~
             if destination:
-                dest_path = self.workspace_dir / destination
+                if destination.startswith('~'):
+                    dest_path = Path(destination).expanduser()
+                elif Path(destination).is_absolute():
+                    dest_path = Path(destination)
+                else:
+                    dest_path = self.workspace_dir / destination
             else:
                 # Extract repo name from URL
                 repo_name = repo_url.rstrip('/').split('/')[-1]

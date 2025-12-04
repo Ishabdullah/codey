@@ -134,7 +134,13 @@ class ShellManager:
     def create_directory(self, directory: str, parents: bool = True) -> Dict:
         """Create a directory with permission check"""
         try:
-            dir_path = self.workspace_dir / directory if not Path(directory).is_absolute() else Path(directory)
+            # Support absolute paths - don't force workspace_dir
+            if directory.startswith('~'):
+                dir_path = Path(directory).expanduser()
+            elif Path(directory).is_absolute():
+                dir_path = Path(directory)
+            else:
+                dir_path = self.workspace_dir / directory
 
             # Check if already exists
             if dir_path.exists():

@@ -40,13 +40,33 @@ Available Commands:
     delete <filename>                - Delete a file
     list files                       - List all files in workspace
 
+  Git Operations:
+    clone <url> [destination]        - Clone a repository (supports ~/ paths)
+    git status                       - Check git status
+    commit with message "msg"        - Commit changes
+    push [remote] [branch]           - Push to remote
+    pull [remote] [branch]           - Pull from remote
+
+  Shell Operations:
+    mkdir <directory>                - Create directory (supports ~/ paths)
+    install <package>                - Install Python package
+    install requirements.txt         - Install from requirements.txt
+    run <filename>                   - Run Python file
+    execute <command>                - Run shell command
+
+  Advanced:
+    plan <task>                      - Create autonomous task plan
+    execute plan                     - Run current plan
+    debug <file>                     - Analyze file for issues
+    ask <question>                   - Query Perplexity API
+    info                             - Show system information
+
   Natural Language:
-    Just describe what you want!
+    Keep commands simple and direct!
     Examples:
       - "create hello.py that prints hello world"
-      - "write a function to calculate fibonacci"
-      - "add error handling to server.py"
-      - "explain what config.py does"
+      - "clone https://github.com/user/repo ~/MyProject"
+      - "install numpy"
 
   System:
     help, ?          - Show this help
@@ -54,9 +74,10 @@ Available Commands:
     exit, quit       - Exit Codey
 
   Tips:
-    - Files are saved in ~/codey/workspace/
-    - Backups are created before edits
-    - Use natural language - Codey understands context!
+    - Use ONE command at a time for best results
+    - Supports ~/ for home directory paths
+    - Git/shell operations work anywhere on your device
+    - Keep instructions simple - complex multi-step tasks may confuse the model
 """
     print(help_text)
 
