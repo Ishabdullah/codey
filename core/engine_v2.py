@@ -58,7 +58,12 @@ class CodeyEngineV2:
         if not user_input or not user_input.strip():
             return "Please enter a command."
 
-        # Check for special commands first
+        # IMPORTANT: Check for complex multi-step instruction FIRST
+        # This prevents the model from generating responses before we detect complexity
+        if self._is_complex_instruction(user_input):
+            return self._handle_complex_instruction(user_input)
+
+        # Check for special commands
         if user_input.lower().startswith('plan '):
             return self._handle_plan_command(user_input[5:])
 
@@ -85,10 +90,6 @@ class CodeyEngineV2:
         # System info
         if user_input.lower() in ['info', 'system info', 'model info']:
             return self._show_system_info()
-
-        # Check if this is a complex multi-step instruction
-        if self._is_complex_instruction(user_input):
-            return self._handle_complex_instruction(user_input)
 
         # Parse the command
         parsed = self.parser.parse(user_input)
@@ -682,12 +683,26 @@ Codey:"""
         print("\n" + "━" * 60)
         print("Starting execution...\n")
 
-        # Execute each step
+        # Track step status
+        step_status = ['⏳' for _ in steps]  # pending = hourglass
         completed = 0
         failed = 0
 
-        for i, step in enumerate(steps, 1):
-            print(f"\n[Step {i}/{len(steps)}] {step['description']}")
+        def show_todo_list():
+            """Display the current todo list with status"""
+            print("\n" + "━" * 60)
+            print("📋 TODO LIST:")
+            for i, step in enumerate(steps):
+                status = step_status[i]
+                print(f"  {status} {i+1}. {step['description']}")
+            print("━" * 60)
+
+        # Show initial todo list
+        show_todo_list()
+
+        # Execute each step
+        for i, step in enumerate(steps):
+            print(f"\n▶️  Executing Step {i+1}/{len(steps)}...")
             print("─" * 60)
 
             try:
@@ -696,33 +711,57 @@ Codey:"""
 
                 if result and 'success' in result:
                     if result['success']:
-                        print(f"✓ Step {i} completed")
+                        step_status[i] = '✅'  # completed
                         completed += 1
+                        print(f"\n✅ Step {i+1} completed!")
                     else:
-                        print(f"✗ Step {i} failed: {result.get('error', 'Unknown error')}")
+                        step_status[i] = '❌'  # failed
                         failed += 1
+                        print(f"\n❌ Step {i+1} failed: {result.get('error', 'Unknown error')}")
+
+                        # Show updated todo list
+                        show_todo_list()
+
                         # Ask if should continue
                         cont = input("\nContinue with remaining steps? [y/n]: ")
                         if cont.lower() not in ['y', 'yes']:
+                            # Mark remaining as skipped
+                            for j in range(i+1, len(steps)):
+                                step_status[j] = '⊘'  # skipped
                             break
                 else:
                     # String response from regular command
                     print(result)
+                    step_status[i] = '✅'
                     completed += 1
 
+                # Show updated todo list after each step
+                show_todo_list()
+
             except Exception as e:
-                print(f"✗ Step {i} error: {str(e)}")
+                step_status[i] = '❌'
                 failed += 1
+                print(f"\n❌ Step {i+1} error: {str(e)}")
+
+                # Show updated todo list
+                show_todo_list()
+
                 cont = input("\nContinue with remaining steps? [y/n]: ")
                 if cont.lower() not in ['y', 'yes']:
+                    # Mark remaining as skipped
+                    for j in range(i+1, len(steps)):
+                        step_status[j] = '⊘'
                     break
 
-        # Summary
-        print("\n" + "━" * 60)
-        print(f"📊 Execution Summary:")
-        print(f"   Completed: {completed}/{len(steps)}")
+        # Final summary
+        show_todo_list()
+        print(f"\n📊 Execution Summary:")
+        print(f"   ✅ Completed: {completed}/{len(steps)}")
         if failed > 0:
-            print(f"   Failed: {failed}/{len(steps)}")
+            print(f"   ❌ Failed: {failed}/{len(steps)}")
+        skipped = len([s for s in step_status if s == '⊘'])
+        if skipped > 0:
+            print(f"   ⊘ Skipped: {skipped}/{len(steps)}")
         print("━" * 60)
 
         return f"\n✓ Automatic execution finished: {completed} completed, {failed} failed"
@@ -731,24 +770,52 @@ Codey:"""
         """Extract individual steps from complex instruction"""
         steps = []
 
-        # Try to parse numbered steps
+        # Clean up input and handle multi-line steps
         lines = user_input.split('\n')
+        cleaned_lines = []
+        current_step = None
 
         for line in lines:
             line = line.strip()
             if not line:
                 continue
 
-            # Check for numbered steps (1., 2., etc.) - be more flexible
-            matched = False
+            # Check if this is a numbered step
+            is_numbered = False
             for i in range(1, 20):
-                # Try different formats: "1.", "1)", "1 -", "1:"
                 for separator in ['.', ')', ' -', ':']:
                     pattern = f"{i}{separator}"
                     if line.startswith(pattern):
-                        # Extract description after the number
+                        # If we had a previous step, save it
+                        if current_step:
+                            cleaned_lines.append(current_step)
+                        # Start new step
+                        current_step = line
+                        is_numbered = True
+                        break
+                if is_numbered:
+                    break
+
+            # If not numbered and we have a current step, append to it
+            if not is_numbered and current_step:
+                current_step += " " + line
+            elif not is_numbered and not current_step:
+                # Skip non-numbered lines before first step
+                continue
+
+        # Don't forget the last step
+        if current_step:
+            cleaned_lines.append(current_step)
+
+        # Now parse the cleaned steps
+        for line in cleaned_lines:
+            matched = False
+            for i in range(1, 20):
+                for separator in ['.', ')', ' -', ':']:
+                    pattern = f"{i}{separator}"
+                    if line.startswith(pattern):
                         description = line[len(pattern):].strip()
-                        if description:  # Only add if there's actual content
+                        if description:
                             step = self._parse_step_description(description)
                             if step:
                                 steps.append(step)
