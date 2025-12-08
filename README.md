@@ -4,6 +4,8 @@
 
 > **Proprietary Notice:** This repository and its contents are proprietary and confidential. Unauthorized use, copying, modification, or distribution is strictly prohibited.
 
+> **Proprietary Notice:** This repository and its contents are proprietary and confidential. Unauthorized use, copying, modification, or distribution is strictly prohibited.
+
 # NOTICE
 This repository is now private and proprietary while we prepare commercial launch.
 All code and assets are © 2025 Ishabdullah — all rights reserved.
