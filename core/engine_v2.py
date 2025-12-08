@@ -51,9 +51,14 @@ class CodeyEngineV2:
 
         self.memory.start_session()
 
-        print(f"\n✓ Codey initialized - Claude Code Edition")
+        # Show initialization info with profile details
+        profile_info = self.config.get_profile_info()
+        print(f"\n✓ Codey initialized - Claude Code Edition v2.1")
+        print(f"✓ Profile: {profile_info['name']}")
+        print(f"  └─ {profile_info['description']}")
         print(f"✓ Context: {self.config.context_size} tokens")
         print(f"✓ GPU layers: {self.config.n_gpu_layers}")
+        print(f"✓ Threads: {self.config.n_threads}")
         print(f"✓ Git enabled: {self.config.git_enabled}")
         print(f"✓ Shell enabled: {self.config.shell_enabled}")
 
@@ -605,19 +610,35 @@ Codey:"""
         """Show system and model information"""
         model_info = self.model_manager.get_model_info()
         system_info = self.shell_manager.get_system_info()
+        profile_info = self.config.get_profile_info()
 
         response = "System Information:\n\n"
 
+        # Model Profile
+        response += "Active Profile:\n"
+        response += f"  Name: {profile_info['name']}\n"
+        response += f"  Description: {profile_info['description']}\n\n"
+
+        # Model Info
         if model_info['loaded']:
             response += "Model:\n"
+            response += f"  File: {profile_info['model_name']}\n"
             response += f"  Path: {model_info['path']}\n"
             response += f"  Context: {model_info['context_size']} tokens\n"
             response += f"  GPU layers: {model_info['gpu_layers']}\n"
             response += f"  CPU threads: {model_info['threads']}\n"
-            response += f"  Batch size: {model_info['batch_size']}\n\n"
+            response += f"  Batch size: {model_info['batch_size']}\n"
+            response += f"  Temperature: {profile_info['temperature']}\n"
+            response += f"  Max tokens: {profile_info['max_tokens']}\n\n"
         else:
             response += "Model: Not loaded\n\n"
 
+        # Performance Settings
+        response += "Performance:\n"
+        response += f"  Streaming: {'Enabled' if self.config.performance.get('streaming_enabled') else 'Disabled'}\n"
+        response += f"  Lightweight mode: {'Yes' if self.config.performance.get('lightweight_mode') else 'No'}\n\n"
+
+        # System Tools
         response += "System:\n"
         if system_info.get('python_version'):
             response += f"  Python: {system_info['python_version']}\n"

@@ -1,13 +1,46 @@
 {
+  "model_profiles": {
+    "s24_ultra_default": {
+      "model_name": "CodeLlama-7B-Instruct.Q4_K_M.gguf",
+      "context_size": 16384,
+      "n_gpu_layers": 35,
+      "n_threads": 6,
+      "n_threads_batch": 6,
+      "temperature": 0.3,
+      "max_tokens": 2048,
+      "description": "Optimized for S24 Ultra with GPU acceleration"
+    },
+    "light_cpu_only": {
+      "model_name": "CodeLlama-7B-Instruct.Q4_K_M.gguf",
+      "context_size": 4096,
+      "n_gpu_layers": 0,
+      "n_threads": 4,
+      "n_threads_batch": 4,
+      "temperature": 0.3,
+      "max_tokens": 1024,
+      "description": "Lightweight CPU-only for low-end devices"
+    },
+    "testing_minimal": {
+      "model_name": "CodeLlama-7B-Instruct.Q4_K_M.gguf",
+      "context_size": 2048,
+      "n_gpu_layers": 0,
+      "n_threads": 2,
+      "n_threads_batch": 2,
+      "temperature": 0.3,
+      "max_tokens": 512,
+      "description": "Minimal profile for testing and debugging"
+    }
+  },
+  "active_model_profile": "s24_ultra_default",
+  "performance": {
+    "streaming_enabled": false,
+    "lightweight_mode": false,
+    "auto_detect_device": true
+  },
   "model_dir": "/data/data/com.termux/files/home/codey/LLM_Models",
-  "model_name": "CodeLlama-7B-Instruct.Q4_K_M.gguf",
   "memory_dir": "/data/data/com.termux/files/home/codey/memory",
   "log_dir": "/data/data/com.termux/files/home/codey/logs",
   "workspace_dir": "/data/data/com.termux/files/home/codey/workspace",
-  "temperature": 0.3,
-  "max_tokens": 2048,
-  "context_size": 4096,
-  "n_gpu_layers": 0,
   "require_confirmation": true,
   "backup_before_edit": true,
   "perplexity_api_key": "your-perplexity-api-key-here",

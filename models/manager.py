@@ -26,13 +26,22 @@ class ModelManager:
         model_path = self.config.model_path
 
         if not model_path.exists():
-            raise FileNotFoundError(
-                f"Model not found at {model_path}\n"
-                f"Please place your GGUF model in {self.config.model_dir}/"
-            )
+            # Provide helpful error message with suggestions
+            error_msg = f"\n❌ Model not found: {model_path.name}\n"
+            error_msg += "─" * 60 + "\n"
+            error_msg += f"Expected location: {model_path}\n"
+            error_msg += f"\n💡 Suggestions:\n"
+            error_msg += f"  1. Check that the model file exists in: {self.config.model_dir}/\n"
+            error_msg += f"  2. Verify the model name in config.json (active profile: {self.config.active_profile_name})\n"
+            error_msg += f"  3. Download a GGUF model from HuggingFace (e.g., TheBloke models)\n"
+            error_msg += f"  4. Try switching to a different profile in config.json\n"
+            error_msg += "─" * 60
+            raise FileNotFoundError(error_msg)
 
+        # Show profile info
+        profile_info = self.config.get_profile_info()
         print(f"Loading model from {model_path}...")
-        print("Optimizing for S24 Ultra (GPU + NPU acceleration)...")
+        print(f"Profile: {profile_info['name']} - {profile_info['description']}")
 
         try:
             # Optimized parameters for S24 Ultra
