@@ -3,6 +3,21 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 
+# Import colors if available
+try:
+    from cli.colors import permission, info, warning, bold, Icons
+    COLORS_AVAILABLE = True
+except ImportError:
+    COLORS_AVAILABLE = False
+    # Fallback to no colors
+    def permission(x): return x
+    def info(x): return x
+    def warning(x): return x
+    def bold(x): return x
+    class Icons:
+        LOCK = "🔒"
+        WARNING = "⚠️"
+
 class PermissionManager:
     """Manages permission requests for all Codey operations"""
 
@@ -12,50 +27,50 @@ class PermissionManager:
 
     def request_file_creation(self, filename: str, preview: str = None) -> bool:
         """Request permission to create a file"""
-        print("\n🔒 Permission required: Create file?")
-        print(f"   Filename: {filename}")
+        print(f"\n{permission(f'{Icons.LOCK} Permission required:')} {bold('Create file?')}")
+        print(f"   Filename: {info(filename)}")
         if preview:
             print(f"   Preview:\n{self._format_preview(preview)}")
         return self._get_confirmation()
 
     def request_file_edit(self, filename: str, preview: str = None, backup_path: str = None) -> bool:
         """Request permission to edit a file"""
-        print("\n🔒 Permission required: Edit file?")
-        print(f"   Filename: {filename}")
+        print(f"\n{permission(f'{Icons.LOCK} Permission required:')} {bold('Edit file?')}")
+        print(f"   Filename: {info(filename)}")
         if backup_path:
-            print(f"   Backup will be created: {backup_path}")
+            print(f"   Backup will be created: {info(backup_path)}")
         if preview:
             print(f"   Preview:\n{self._format_preview(preview)}")
         return self._get_confirmation()
 
     def request_file_deletion(self, filename: str, backup_path: str = None) -> bool:
         """Request permission to delete a file"""
-        print("\n🔒 Permission required: Delete file?")
-        print(f"   Filename: {filename}")
+        print(f"\n{permission(f'{Icons.LOCK} Permission required:')} {bold('Delete file?')}")
+        print(f"   Filename: {info(filename)}")
         if backup_path:
-            print(f"   Backup will be created: {backup_path}")
-        print("   ⚠️  This action cannot be easily undone!")
+            print(f"   Backup will be created: {info(backup_path)}")
+        print(f"   {warning(f'{Icons.WARNING} This action cannot be easily undone!')}")
         return self._get_confirmation()
 
     def request_shell_command(self, command: str, description: str = None) -> bool:
         """Request permission to execute a shell command"""
-        print("\n🔒 Permission required: Execute shell command?")
-        print(f"   Command: {command}")
+        print(f"\n{permission(f'{Icons.LOCK} Permission required:')} {bold('Execute shell command?')}")
+        print(f"   Command: {info(command)}")
         if description:
             print(f"   Purpose: {description}")
         return self._get_confirmation()
 
     def request_git_clone(self, repo_url: str, destination: str) -> bool:
         """Request permission to clone a git repository"""
-        print("\n🔒 Permission required: Clone repository?")
-        print(f"   Repository: {repo_url}")
-        print(f"   Destination: {destination}")
+        print(f"\n{permission(f'{Icons.LOCK} Permission required:')} {bold('Clone repository?')}")
+        print(f"   Repository: {info(repo_url)}")
+        print(f"   Destination: {info(destination)}")
         return self._get_confirmation()
 
     def request_git_commit(self, message: str, files: List[str]) -> bool:
         """Request permission to create a git commit"""
-        print("\n🔒 Permission required: Create git commit?")
-        print(f"   Message: \"{message}\"")
+        print(f"\n{permission(f'{Icons.LOCK} Permission required:')} {bold('Create git commit?')}")
+        print(f"   Message: {info(f'"{message}"')}")
         print(f"   Files: {len(files)} file(s)")
         if len(files) <= 5:
             for f in files:
@@ -68,17 +83,17 @@ class PermissionManager:
 
     def request_git_push(self, branch: str, remote: str = "origin") -> bool:
         """Request permission to push to remote repository"""
-        print("\n🔒 Permission required: Push to remote repository?")
-        print(f"   Remote: {remote}")
-        print(f"   Branch: {branch}")
-        print("   ⚠️  This will modify the remote repository!")
+        print(f"\n{permission(f'{Icons.LOCK} Permission required:')} {bold('Push to remote repository?')}")
+        print(f"   Remote: {info(remote)}")
+        print(f"   Branch: {info(branch)}")
+        print(f"   {warning(f'{Icons.WARNING} This will modify the remote repository!')}")
         return self._get_confirmation()
 
     def request_dependency_install(self, packages: List[str], file: str = None) -> bool:
         """Request permission to install dependencies"""
-        print("\n🔒 Permission required: Install Python packages?")
+        print(f"\n{permission(f'{Icons.LOCK} Permission required:')} {bold('Install Python packages?')}")
         if file:
-            print(f"   From: {file}")
+            print(f"   From: {info(file)}")
         print(f"   Packages: {len(packages)} package(s)")
         if len(packages) <= 10:
             for pkg in packages:
@@ -91,13 +106,13 @@ class PermissionManager:
 
     def request_directory_creation(self, directory: str) -> bool:
         """Request permission to create a directory"""
-        print("\n🔒 Permission required: Create directory?")
-        print(f"   Directory: {directory}")
+        print(f"\n{permission(f'{Icons.LOCK} Permission required:')} {bold('Create directory?')}")
+        print(f"   Directory: {info(directory)}")
         return self._get_confirmation()
 
     def request_multiple_file_operation(self, operation: str, files: List[str]) -> bool:
         """Request permission for operations affecting multiple files"""
-        print(f"\n🔒 Permission required: {operation}?")
+        print(f"\n{permission(f'{Icons.LOCK} Permission required:')} {bold(f'{operation}?')}")
         print(f"   Files affected: {len(files)}")
         if len(files) <= 5:
             for f in files:
@@ -110,9 +125,9 @@ class PermissionManager:
 
     def request_custom_operation(self, title: str, details: Dict[str, Any]) -> bool:
         """Request permission for a custom operation"""
-        print(f"\n🔒 Permission required: {title}?")
+        print(f"\n{permission(f'{Icons.LOCK} Permission required:')} {bold(f'{title}?')}")
         for key, value in details.items():
-            print(f"   {key}: {value}")
+            print(f"   {key}: {info(str(value))}")
         return self._get_confirmation()
 
     def _get_confirmation(self) -> bool:

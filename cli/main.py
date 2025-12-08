@@ -8,6 +8,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.engine_v2 import CodeyEngineV2 as CodeyEngine
+from cli.colors import (
+    success, error, warning, info, bold, dim,
+    success_msg, error_msg, warning_msg, info_msg,
+    Icons
+)
 
 def print_banner():
     """Print Codey banner"""
@@ -29,57 +34,73 @@ def print_banner():
     print(banner)
 
 def print_help():
-    """Print help information"""
-    help_text = """
-Available Commands:
+    """Print help information with colors and categories"""
+    print(f"\n{bold('═' * 60)}")
+    print(f"{bold(info('  CODEY COMMAND REFERENCE'))}")
+    print(f"{bold('═' * 60)}\n")
 
-  File Operations:
-    create <filename> <description>  - Create a new file
-    edit <filename> <changes>        - Edit an existing file
-    read <filename>                  - Display file contents
-    delete <filename>                - Delete a file
-    list files                       - List all files in workspace
+    # File Operations
+    print(f"{bold(success(f'{Icons.FILE} FILE OPERATIONS'))}")
+    print(f"  {info('create')} <filename> <description>  - Create a new file")
+    print(f"  {info('edit')} <filename> <changes>        - Edit an existing file")
+    print(f"  {info('read')} <filename>                  - Display file contents")
+    print(f"  {info('delete')} <filename>                - Delete a file")
+    print(f"  {info('list')} files                       - List all files in workspace")
+    print()
 
-  Git Operations:
-    clone <url> [destination]        - Clone a repository (supports ~/ paths)
-    git status                       - Check git status
-    commit with message "msg"        - Commit changes
-    push [remote] [branch]           - Push to remote
-    pull [remote] [branch]           - Pull from remote
+    # Git Operations
+    print(f"{bold(success(f'{Icons.GIT} GIT OPERATIONS'))}")
+    print(f"  {info('clone')} <url> [destination]        - Clone a repository")
+    print(f"  {info('git status')}                       - Check git status")
+    print(f"  {info('commit')} with message \"msg\"       - Commit changes")
+    print(f"  {info('push')} [remote] [branch]           - Push to remote")
+    print(f"  {info('pull')} [remote] [branch]           - Pull from remote")
+    print(f"  {info('git init')}                         - Initialize git repository")
+    print()
 
-  Shell Operations:
-    mkdir <directory>                - Create directory (supports ~/ paths)
-    install <package>                - Install Python package
-    install requirements.txt         - Install from requirements.txt
-    run <filename>                   - Run Python file
-    execute <command>                - Run shell command
+    # Shell Operations
+    print(f"{bold(success(f'{Icons.SHELL} SHELL OPERATIONS'))}")
+    print(f"  {info('mkdir')} <directory>                - Create directory")
+    print(f"  {info('install')} <package>                - Install Python package")
+    print(f"  {info('install')} requirements.txt         - Install from requirements.txt")
+    print(f"  {info('run')} <filename>                   - Run Python file")
+    print(f"  {info('execute')} <command>                - Run shell command")
+    print()
 
-  Advanced:
-    plan <task>                      - Create autonomous task plan
-    execute plan                     - Run current plan
-    debug <file>                     - Analyze file for issues
-    ask <question>                   - Query Perplexity API
-    info                             - Show system information
+    # Advanced Features
+    print(f"{bold(success(f'{Icons.ROBOT} ADVANCED FEATURES'))}")
+    print(f"  {info('plan')} <task>                      - Create autonomous task plan")
+    print(f"  {info('execute plan')}                     - Run current plan")
+    print(f"  {info('show plan')}                        - Display current plan")
+    print(f"  {info('debug')} <file>                     - Analyze file for issues")
+    print(f"  {info('ask')} <question>                   - Query Perplexity API")
+    print(f"  {info('info')}                             - Show system information")
+    print()
 
-  Natural Language:
-    Keep commands simple and direct!
-    Examples:
-      - "create hello.py that prints hello world"
-      - "clone https://github.com/user/repo ~/MyProject"
-      - "install numpy"
+    # Natural Language
+    print(f"{bold(success(f'{Icons.WRENCH} NATURAL LANGUAGE'))}")
+    print(f"  {dim('Keep commands simple and direct!')}")
+    print(f"  {dim('Examples:')}")
+    print(f"    • {info('create hello.py that prints hello world')}")
+    print(f"    • {info('clone https://github.com/user/repo ~/MyProject')}")
+    print(f"    • {info('install numpy')}")
+    print()
 
-  System:
-    help, ?          - Show this help
-    clear            - Clear screen
-    exit, quit       - Exit Codey
+    # System Commands
+    print(f"{bold(success('SYSTEM COMMANDS'))}")
+    print(f"  {info('help, ?')}          - Show this help")
+    print(f"  {info('clear')}             - Clear screen")
+    print(f"  {info('exit, quit')}        - Exit Codey")
+    print()
 
-  Tips:
-    - Use ONE command at a time for best results
-    - Supports ~/ for home directory paths
-    - Git/shell operations work anywhere on your device
-    - Keep instructions simple - complex multi-step tasks may confuse the model
-"""
-    print(help_text)
+    # Tips
+    print(f"{bold(warning(f'{Icons.INFO} TIPS'))}")
+    print(f"  • Use ONE command at a time for best results")
+    print(f"  • Supports ~/ for home directory paths")
+    print(f"  • Git/shell operations work anywhere on your device")
+    print(f"  • All operations require permission approval")
+    print()
+    print(f"{bold('═' * 60)}\n")
 
 def clear_screen():
     """Clear the terminal screen"""
@@ -88,18 +109,18 @@ def clear_screen():
 def interactive_mode():
     """Run Codey in interactive mode"""
     print_banner()
-    print("\nInitializing Codey...")
+    print(f"\n{info_msg('Initializing Codey...')}\n")
 
     try:
         engine = CodeyEngine()
-        print("Ready! Type 'help' for commands or start coding.\n")
+        print(f"{success_msg('Ready!')} Type {info('help')} for commands or start coding.\n")
     except FileNotFoundError as e:
-        print(f"\nError: {e}")
-        print("\nPlease ensure you have a GGUF model in ~/codey/LLM_Models/")
-        print("Or update config.json with the correct model path.")
+        print(f"\n{error_msg('Model not found')}")
+        print(f"\n{warning('Please ensure you have a GGUF model in ~/codey/LLM_Models/')}")
+        print(f"{warning('Or update config.json with the correct model path.')}")
         sys.exit(1)
     except Exception as e:
-        print(f"\nFailed to initialize Codey: {e}")
+        print(f"\n{error_msg(f'Failed to initialize Codey: {e}')}")
         sys.exit(1)
 
     # Main interaction loop
@@ -112,9 +133,9 @@ def interactive_mode():
 
             # Handle system commands
             if user_input.lower() in ['exit', 'quit', 'q']:
-                print("\nShutting down Codey...")
+                print(f"\n{info_msg('Shutting down Codey...')}")
                 engine.shutdown()
-                print("Goodbye!")
+                print(f"{success_msg('Goodbye!')}\n")
                 break
 
             elif user_input.lower() in ['help', '?', 'h']:
@@ -131,16 +152,16 @@ def interactive_mode():
             print(f"\n{response}")
 
         except KeyboardInterrupt:
-            print("\n\nInterrupted. Type 'exit' to quit or continue working.")
+            print(f"\n\n{warning_msg('Interrupted')} Type {info('exit')} to quit or continue working.")
             continue
 
         except EOFError:
-            print("\nShutting down Codey...")
+            print(f"\n{info_msg('Shutting down Codey...')}")
             engine.shutdown()
             break
 
         except Exception as e:
-            print(f"\nError: {e}")
+            print(f"\n{error_msg(f'Error: {e}')}")
             continue
 
 def main():
