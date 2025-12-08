@@ -1,19 +1,58 @@
-"""Perplexity API integration for enhanced reasoning and knowledge"""
+"""Perplexity API integration with retry logic and fallback (v2.1)"""
 import json
 import urllib.request
 import urllib.error
+import time
 from typing import Optional, Dict, Any
+from pathlib import Path
 
 class PerplexityAPI:
-    """Interface to Perplexity API for deep knowledge and debugging"""
+    """Interface to Perplexity API with enhanced robustness"""
 
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, config=None):
         self.api_key = api_key
         self.api_url = "https://api.perplexity.ai/chat/completions"
         self.model = "sonar"  # Lightweight, grounded search model (2025)
 
-    def _make_request(self, messages: list, max_tokens: int = 1024) -> Optional[str]:
-        """Make a request to Perplexity API"""
+        # Load retry settings from config or use defaults
+        self.retry_limit = 3
+        self.timeout_seconds = 30
+        self.fallback_to_local = True
+
+        if config and hasattr(config, 'perplexity'):
+            perplexity_config = config.perplexity
+            self.retry_limit = perplexity_config.get('retry_limit', 3)
+            self.timeout_seconds = perplexity_config.get('timeout_seconds', 30)
+            self.fallback_to_local = perplexity_config.get('fallback_to_local', True)
+
+        # Initialize error logger
+        self.error_log = None
+        if config and hasattr(config, 'log_dir'):
+            self.error_log = Path(config.log_dir) / "perplexity_errors.log"
+            self.error_log.parent.mkdir(parents=True, exist_ok=True)
+
+    def _log_error(self, error_type: str, details: str, request_data: dict = None):
+        """Log Perplexity API errors for debugging"""
+        if not self.error_log:
+            return
+
+        try:
+            import datetime
+            log_entry = {
+                'timestamp': datetime.datetime.now().isoformat(),
+                'error_type': error_type,
+                'details': details,
+                'request': request_data
+            }
+
+            with open(self.error_log, 'a') as f:
+                f.write(json.dumps(log_entry) + '\n')
+        except Exception:
+            # Don't fail if logging fails
+            pass
+
+    def _make_request(self, messages: list, max_tokens: int = 1024, retry_count: int = 0) -> Optional[str]:
+        """Make a request to Perplexity API with retry logic"""
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
@@ -35,20 +74,54 @@ class PerplexityAPI:
                 method='POST'
             )
 
-            with urllib.request.urlopen(req, timeout=30) as response:
+            with urllib.request.urlopen(req, timeout=self.timeout_seconds) as response:
                 result = json.loads(response.read().decode('utf-8'))
                 return result['choices'][0]['message']['content']
 
         except urllib.error.HTTPError as e:
-            error_body = e.read().decode('utf-8')
-            print(f"Perplexity API HTTP Error: {e.code} - {error_body}")
+            error_body = e.read().decode('utf-8') if hasattr(e, 'read') else str(e)
+
+            # Handle rate limiting (HTTP 429)
+            if e.code == 429:
+                if retry_count < self.retry_limit:
+                    wait_time = 2 ** retry_count  # Exponential backoff: 1s, 2s, 4s
+                    print(f"⚠️  Perplexity rate limit hit. Retrying in {wait_time}s... (attempt {retry_count + 1}/{self.retry_limit})")
+                    time.sleep(wait_time)
+                    return self._make_request(messages, max_tokens, retry_count + 1)
+                else:
+                    self._log_error('RATE_LIMIT', f'Exceeded retry limit after {self.retry_limit} attempts', data)
+                    print(f"❌ Perplexity rate limit exceeded. {self._fallback_message()}")
+                    return None
+
+            # Handle other HTTP errors
+            self._log_error('HTTP_ERROR', f'HTTP {e.code}: {error_body}', data)
+            print(f"❌ Perplexity API error (HTTP {e.code}). {self._fallback_message()}")
             return None
+
         except urllib.error.URLError as e:
-            print(f"Perplexity API URL Error: {e.reason}")
-            return None
+            # Network errors (timeout, connection failed, etc.)
+            if retry_count < self.retry_limit:
+                wait_time = 2 ** retry_count
+                print(f"⚠️  Network error connecting to Perplexity. Retrying in {wait_time}s... (attempt {retry_count + 1}/{self.retry_limit})")
+                time.sleep(wait_time)
+                return self._make_request(messages, max_tokens, retry_count + 1)
+            else:
+                self._log_error('NETWORK_ERROR', str(e.reason), data)
+                print(f"❌ Perplexity network error. {self._fallback_message()}")
+                return None
+
         except Exception as e:
-            print(f"Perplexity API Error: {str(e)}")
+            # Unexpected errors
+            self._log_error('UNEXPECTED_ERROR', str(e), data)
+            print(f"❌ Perplexity unexpected error: {str(e)[:100]}. {self._fallback_message()}")
             return None
+
+    def _fallback_message(self) -> str:
+        """Get fallback message"""
+        if self.fallback_to_local:
+            return "Falling back to local model..."
+        else:
+            return "Perplexity unavailable."
 
     def ask_perplexity(self, question: str) -> Optional[str]:
         """Ask Perplexity a general question"""

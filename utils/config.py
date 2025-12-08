@@ -44,6 +44,14 @@ class Config:
         self.use_perplexity = config_data.get('use_perplexity', True)
         self.hybrid_mode = config_data.get('hybrid_mode', True)
 
+        # Perplexity retry/fallback settings (v2.1)
+        self.perplexity = config_data.get('perplexity', {
+            'enabled': True,
+            'retry_limit': 3,
+            'timeout_seconds': 30,
+            'fallback_to_local': True
+        })
+
         # Feature toggles
         self.git_enabled = config_data.get('git_enabled', True)
         self.shell_enabled = config_data.get('shell_enabled', True)

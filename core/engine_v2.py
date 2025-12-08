@@ -39,7 +39,7 @@ class CodeyEngineV2:
         # Initialize Perplexity if enabled
         self.perplexity = None
         if self.config.use_perplexity and self.config.perplexity_api_key:
-            self.perplexity = PerplexityAPI(self.config.perplexity_api_key)
+            self.perplexity = PerplexityAPI(self.config.perplexity_api_key, self.config)
 
         # Initialize agents
         self.coding_agent = CodingAgent(self.model_manager, self.file_tools, self.config)
