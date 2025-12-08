@@ -1,3 +1,7 @@
+# NOTICE
+This repository is now private and proprietary while we prepare commercial launch.
+All code and assets are © 2025 Ishabdullah — all rights reserved.
+
 # Codey - Claude Code Edition
 
 **A production-grade local AI coding assistant with Claude Code-like capabilities**
