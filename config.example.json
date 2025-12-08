@@ -12,5 +12,10 @@
   "backup_before_edit": true,
   "perplexity_api_key": "your-perplexity-api-key-here",
   "use_perplexity": true,
-  "hybrid_mode": true
+  "hybrid_mode": true,
+  "shell_safety": {
+    "enable_dangerous_commands": false,
+    "log_command_decisions": true,
+    "require_preview_for_risky": true
+  }
 }

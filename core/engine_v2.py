@@ -34,7 +34,7 @@ class CodeyEngineV2:
 
         # Initialize Git and Shell managers
         self.git_manager = GitManager(self.permission_manager, self.config.workspace_dir)
-        self.shell_manager = ShellManager(self.permission_manager, self.config.workspace_dir)
+        self.shell_manager = ShellManager(self.permission_manager, self.config.workspace_dir, self.config)
 
         # Initialize Perplexity if enabled
         self.perplexity = None

@@ -49,6 +49,13 @@ class Config:
         self.git_enabled = config_data.get('git_enabled', True)
         self.shell_enabled = config_data.get('shell_enabled', True)
 
+        # Shell safety settings (v2.1)
+        self.shell_safety = config_data.get('shell_safety', {
+            'enable_dangerous_commands': False,
+            'log_command_decisions': True,
+            'require_preview_for_risky': True
+        })
+
         # Ensure directories exist
         for d in [self.model_dir, self.memory_dir, self.log_dir, self.workspace_dir]:
             d.mkdir(parents=True, exist_ok=True)
