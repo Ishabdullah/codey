@@ -20,12 +20,15 @@ class Config:
             config_data = self.default_config()
             self.save_config(config_data)
 
+        # Check for new multi-model format (v3.0+)
+        if 'models' in config_data:
+            self._load_multi_model_config(config_data)
         # Check for model_profiles (v2.1+)
-        if 'model_profiles' in config_data:
+        elif 'model_profiles' in config_data:
             self._load_with_profiles(config_data)
         else:
             # Backward compatibility: migrate old config
-            print("⚠️  Old config format detected. Migrating to model profiles...")
+            print("⚠️  Old config format detected. Migrating to multi-model profiles...")
             self._migrate_old_config(config_data)
 
         # Set directories
@@ -74,10 +77,37 @@ class Config:
         for d in [self.model_dir, self.memory_dir, self.log_dir, self.workspace_dir]:
             d.mkdir(parents=True, exist_ok=True)
 
+    def _load_multi_model_config(self, config_data):
+        """Load configuration using multi-model format (v3.0+)"""
+        # New multi-model configuration
+        self.models = config_data.get('models', {})
+        self.memory_budget_mb = config_data.get('memory_budget_mb', 6000)
+        self.routing = config_data.get('routing', {})
+
+        # Set legacy attributes for backward compatibility
+        # Use coder model as default for legacy code
+        if 'coder' in self.models:
+            coder_config = self.models['coder']
+            self.model_name = coder_config.get('path', 'qwen2.5-coder-7b-instruct-q4_k_m.gguf')
+            self.context_size = coder_config.get('context_size', 8192)
+            self.n_gpu_layers = coder_config.get('n_gpu_layers', 35)
+            self.n_threads = coder_config.get('n_threads', 6)
+            self.n_threads_batch = coder_config.get('n_threads_batch', 6)
+            self.temperature = coder_config.get('temperature', 0.3)
+            self.max_tokens = coder_config.get('max_tokens', 2048)
+
+        self.active_profile_name = "multi_model_v3"
+        self.profile_description = "Multi-model architecture with router, coder, and algorithm specialist"
+
     def _load_with_profiles(self, config_data):
         """Load configuration using model profiles (v2.1+)"""
         self.model_profiles = config_data.get('model_profiles', {})
         self.active_profile_name = config_data.get('active_model_profile', 's24_ultra_default')
+
+        # Initialize models dict as empty for backward compat
+        self.models = {}
+        self.memory_budget_mb = 6000
+        self.routing = {}
 
         # Get active profile
         if self.active_profile_name not in self.model_profiles:
@@ -158,37 +188,60 @@ class Config:
         self.profile_description = profile['description']
 
     def default_config(self):
-        """Return default configuration with model profiles (v2.1)"""
+        """Return default configuration with multi-model setup (v3.0)"""
         return {
-            'model_profiles': {
-                's24_ultra_default': {
-                    'model_name': 'CodeLlama-7B-Instruct.Q4_K_M.gguf',
-                    'context_size': 16384,
+            # Multi-model configuration (v3.0+)
+            'models': {
+                'router': {
+                    'path': 'functiongemma-270m-it-Q8_0.gguf',
+                    'context_size': 2048,
+                    'n_gpu_layers': 10,
+                    'n_threads': 4,
+                    'n_threads_batch': 4,
+                    'temperature': 0.3,
+                    'max_tokens': 512,
+                    'always_resident': True,
+                    'description': 'Always-on intent router (270M params)'
+                },
+                'coder': {
+                    'path': 'qwen2.5-coder-7b-instruct-q4_k_m.gguf',
+                    'context_size': 8192,
                     'n_gpu_layers': 35,
                     'n_threads': 6,
                     'n_threads_batch': 6,
                     'temperature': 0.3,
                     'max_tokens': 2048,
-                    'description': 'Optimized for S24 Ultra with GPU acceleration'
+                    'always_resident': False,
+                    'unload_after_seconds': 60,
+                    'description': 'Primary coding model (Qwen2.5-Coder 7B)'
                 },
-                'light_cpu_only': {
-                    'model_name': 'CodeLlama-7B-Instruct.Q4_K_M.gguf',
-                    'context_size': 4096,
-                    'n_gpu_layers': 0,
-                    'n_threads': 4,
-                    'n_threads_batch': 4,
-                    'temperature': 0.3,
-                    'max_tokens': 1024,
-                    'description': 'Lightweight CPU-only for low-end devices'
+                'algorithm': {
+                    'path': 'deepseek-coder-6.7b-instruct-q4_k_m.gguf',
+                    'context_size': 8192,
+                    'n_gpu_layers': 35,
+                    'n_threads': 6,
+                    'n_threads_batch': 6,
+                    'temperature': 0.2,
+                    'max_tokens': 4096,
+                    'always_resident': False,
+                    'unload_after_seconds': 30,
+                    'description': 'Algorithm specialist (DeepSeek-Coder 6.7B)'
                 }
             },
-            'active_model_profile': 's24_ultra_default',
+            'memory_budget_mb': 6000,
+            'routing': {
+                'confidence_threshold_tool': 0.90,
+                'confidence_threshold_simple': 0.85,
+                'confidence_threshold_code': 0.70,
+                'enable_regex_fallback': True,
+                'cache_intent_results': True
+            },
             'performance': {
                 'streaming_enabled': False,
                 'lightweight_mode': False,
                 'auto_detect_device': True
             },
-            'model_dir': str(self.codey_dir / 'LLM_Models'),
+            'model_dir': str(Path.home() / 'LLM_Models'),
             'memory_dir': str(self.codey_dir / 'memory'),
             'log_dir': str(self.codey_dir / 'logs'),
             'workspace_dir': str(self.codey_dir / 'workspace'),
@@ -201,7 +254,9 @@ class Config:
                 'enable_dangerous_commands': False,
                 'log_command_decisions': True,
                 'require_preview_for_risky': True
-            }
+            },
+            'git_enabled': True,
+            'shell_enabled': True
         }
 
     def save_config(self, config_data=None):

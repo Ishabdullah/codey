@@ -42,16 +42,26 @@ tmp/
 
 # Memory and config (keep structure but not sensitive data)
 config.json
+config.json.backup
 memory.json
 memory/*.json
 
 # Model files (too large for git)
 LLM_Models/*.gguf
 models/*.gguf
+*.gguf
 
 # Backup files
 *.bak
 *.backup
+
+# Test artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+*.pyc
+test_output/
+.tox/
 
 # OS
 .DS_Store

@@ -1,5 +1,10 @@
-"""Model management and loading for Codey - Optimized for S24 Ultra"""
+"""Model management and loading for Codey - Optimized for S24 Ultra
+
+LEGACY WRAPPER: This class now delegates to ModelLifecycleManager for
+backward compatibility. New code should use ModelLifecycleManager directly.
+"""
 import sys
+import warnings
 from pathlib import Path
 
 try:
@@ -9,8 +14,18 @@ except ImportError:
     print("Install it with: pip install llama-cpp-python")
     sys.exit(1)
 
+
 class ModelManager:
-    """Manages loading and interaction with GGUF models via llama.cpp"""
+    """Manages loading and interaction with GGUF models via llama.cpp
+
+    LEGACY WRAPPER: This class delegates to ModelLifecycleManager for
+    backward compatibility with existing code.
+
+    For new code, use:
+        from models.lifecycle import ModelLifecycleManager, ModelRole
+        lifecycle = ModelLifecycleManager(config)
+        model = lifecycle.load_model(ModelRole.CODER)
+    """
 
     def __init__(self, config):
         self.config = config
@@ -18,8 +33,31 @@ class ModelManager:
         self.model_loaded = False
         self.model_info = {}
 
+        # Check if new multi-model config exists
+        if hasattr(config, 'models') and config.models:
+            # Use new lifecycle manager
+            from models.lifecycle import ModelLifecycleManager, ModelRole
+            self._lifecycle = ModelLifecycleManager(config)
+            self._default_role = ModelRole.CODER
+            self._use_lifecycle = True
+            print("ModelManager: Using ModelLifecycleManager backend")
+        else:
+            # Legacy mode - use old single-model loading
+            self._lifecycle = None
+            self._use_lifecycle = False
+            print("ModelManager: Using legacy single-model backend")
+
     def load_model(self):
         """Load the GGUF model into memory with optimizations"""
+        # If using lifecycle manager, delegate to it
+        if self._use_lifecycle:
+            model_obj = self._lifecycle.load_model(self._default_role)
+            self.model = model_obj._model  # Access underlying llama.cpp model
+            self.model_loaded = model_obj.loaded
+            self.model_info = model_obj.get_model_info()
+            return self.model
+
+        # Legacy loading path
         if self.model_loaded:
             return self.model
 
@@ -96,6 +134,17 @@ class ModelManager:
 
     def generate(self, prompt, temperature=None, max_tokens=None, stop=None):
         """Generate text from the model"""
+        # If using lifecycle manager, delegate to it
+        if self._use_lifecycle:
+            model_obj = self._lifecycle.ensure_loaded(self._default_role)
+            return model_obj.generate(
+                prompt,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                stop=stop
+            )
+
+        # Legacy generation path
         if not self.model_loaded:
             self.load_model()
 
@@ -116,6 +165,11 @@ class ModelManager:
 
     def get_model_info(self):
         """Get information about the loaded model"""
+        # If using lifecycle manager, get info from it
+        if self._use_lifecycle:
+            return self._lifecycle.get_model_info(self._default_role)
+
+        # Legacy info path
         if not self.model_loaded:
             return {'loaded': False}
 
@@ -126,6 +180,15 @@ class ModelManager:
 
     def unload_model(self):
         """Unload the model from memory"""
+        # If using lifecycle manager, delegate to it
+        if self._use_lifecycle:
+            self._lifecycle.unload_model(self._default_role)
+            self.model = None
+            self.model_loaded = False
+            self.model_info = {}
+            return
+
+        # Legacy unload path
         if self.model:
             del self.model
             self.model = None
