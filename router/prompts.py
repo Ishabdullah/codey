@@ -1,49 +1,29 @@
 """Prompt templates for intent classification"""
 
 # System prompt for the intent router model
-INTENT_ROUTER_SYSTEM = """You are an intent classifier for a coding assistant. Analyze the user's request and respond with JSON only.
+INTENT_ROUTER_SYSTEM = """Classify user requests as JSON. Output ONLY valid JSON, nothing else.
 
-Your job is to classify the intent and extract parameters. Output valid JSON in this exact format:
+Format (JSON only, no explanation):
+{"intent": "<type>", "confidence": <0-1>, "tool": "<tool|null>", "params": {}, "escalate": "<escalate|null>"}
 
-{
-  "intent": "<one of: tool_call, simple_answer, coding_task, algorithm_task>",
-  "confidence": <0.0 to 1.0>,
-  "tool": "<git|shell|file|null>",
-  "params": {<extracted parameters>},
-  "escalate": "<coder|algorithm|null>"
-}
-
-Intent Types:
-- tool_call: Direct command (git, shell, file operations)
-- simple_answer: Quick question answerable without code
-- coding_task: Write/edit code, implement features
-- algorithm_task: Complex algorithms, data structures, performance
-
-Tool Types (for tool_call intent):
-- git: Git operations (status, commit, push, pull, clone)
-- shell: Shell commands (mkdir, run, install, execute)
-- file: File operations (read, write, delete, list)
-
-Escalation:
-- coder: For coding_task intent
-- algorithm: For algorithm_task intent
-- null: Handle directly (tool_call, simple_answer)
+Intent types: tool_call, simple_answer, coding_task, algorithm_task
+Tools: git, shell, file
+Escalate: coder, algorithm
 
 Examples:
-
-User: "git status"
+User: git status
 {"intent": "tool_call", "confidence": 0.99, "tool": "git", "params": {"action": "status"}, "escalate": null}
 
-User: "create a file test.py with hello world"
-{"intent": "coding_task", "confidence": 0.95, "tool": null, "params": {"filename": "test.py", "task": "hello world"}, "escalate": "coder"}
+User: create test.py with hello world
+{"intent": "coding_task", "confidence": 0.95, "tool": null, "params": {"filename": "test.py"}, "escalate": "coder"}
 
-User: "implement quicksort algorithm"
-{"intent": "algorithm_task", "confidence": 0.98, "tool": null, "params": {"algorithm": "quicksort"}, "escalate": "algorithm"}
+User: write code that prints hello world
+{"intent": "coding_task", "confidence": 0.90, "tool": null, "params": {"task": "print hello world"}, "escalate": "coder"}
 
-User: "what is python?"
-{"intent": "simple_answer", "confidence": 0.92, "tool": null, "params": {}, "escalate": null}
+User: open calculator.py file
+{"intent": "tool_call", "confidence": 0.95, "tool": "file", "params": {"filename": "calculator.py", "action": "read"}, "escalate": null}
 
-Now classify this request:"""
+Classify (JSON only):"""
 
 
 INTENT_CLASSIFICATION_TEMPLATE = """{system_prompt}
@@ -74,9 +54,11 @@ REGEX_PATTERNS = {
     ],
 
     "tool_call_file": [
-        r"^(read|show|display|cat|view)\s+.*\.(py|js|java|cpp|c|go|rs)",
+        r"^(read|show|display|cat|view|open)\s+.*\.(py|js|java|cpp|c|go|rs)",
         r"^(list|show)\s+files",
         r"^(delete|remove|rm)\s+.*\.(py|js|java|cpp|c|go|rs)",
+        r"open\s+(the\s+)?.*\.(py|js|java|cpp|c|go|rs)",
+        r"read\s+(the\s+)?.*file",
     ],
 
     "coding_task": [
@@ -84,6 +66,10 @@ REGEX_PATTERNS = {
         r"(edit|modify|update|change|fix)\s+.*\.(py|js|java|cpp|c|go|rs)",
         r"(refactor|improve|optimize)\s+",
         r"(add|implement|build)\s+(function|class|method|feature)",
+        r"(write|create|make).*code",
+        r"code\s+(that|for|to)\s+",
+        r"(create|write).*calculator",
+        r"prints?\s+hello\s+world",
     ],
 
     "algorithm_task": [
