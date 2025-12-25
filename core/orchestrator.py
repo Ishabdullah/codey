@@ -6,6 +6,7 @@ from router.intent_router import IntentRouter, IntentResult
 from executor.tool_executor import ToolExecutor, ToolResult
 from models.coder import PrimaryCoder, CodingTask, CodeResult
 from models.algorithm_model import AlgorithmSpecialist, AlgorithmTask, AlgorithmResult
+from utils.thinking_display import ThinkingStep, thinking, step, substep, complete, error as display_error
 
 
 class Orchestrator:
@@ -46,15 +47,24 @@ class Orchestrator:
         """
         # Ensure router is loaded
         if self.router is None:
-            self._load_router()
+            with thinking(ThinkingStep.LOADING_MODEL, "Intent Router"):
+                self._load_router()
 
         # Classify intent
-        try:
-            intent_result = self.router.classify(user_input, context)
-        except Exception as e:
-            return f"Error classifying intent: {e}"
+        with thinking(ThinkingStep.CLASSIFYING):
+            try:
+                intent_result = self.router.classify(user_input, context)
+                substep(f"Intent: {intent_result.intent}")
+                if intent_result.used_fallback:
+                    substep("Using regex fallback")
+                substep(f"Confidence: {intent_result.confidence:.0%}")
+            except Exception as e:
+                display_error(f"Classification failed: {e}")
+                return f"Error classifying intent: {e}"
 
         # Route based on intent
+        step(ThinkingStep.ROUTING, intent_result.intent)
+
         if intent_result.is_tool_call():
             return self._handle_tool_call(intent_result)
 
@@ -97,11 +107,14 @@ class Orchestrator:
             return "Error: Tool call without tool specified"
 
         # Execute tool
-        result = self.tools.execute(tool, params)
+        with thinking(ThinkingStep.EXECUTING_TOOL, f"{tool} {params.get('action', '')}".strip()):
+            result = self.tools.execute(tool, params)
 
         if not result.success:
+            display_error(f"{tool} failed: {result.error}")
             return f"✗ {tool} failed: {result.error}"
 
+        complete()
         # Format output based on tool
         return self._format_tool_result(result)
 
@@ -263,13 +276,13 @@ Answer:"""
         Returns:
             Coding result
         """
-        print("Loading Qwen2.5-Coder 7B for coding task...")
-
         # Load primary coder model
-        try:
-            coder_model = self.lifecycle.ensure_loaded(ModelRole.CODER)
-        except Exception as e:
-            return f"✗ Failed to load coder model: {e}"
+        with thinking(ThinkingStep.LOADING_MODEL, "Qwen2.5-Coder 7B"):
+            try:
+                coder_model = self.lifecycle.ensure_loaded(ModelRole.CODER)
+            except Exception as e:
+                display_error(f"Failed to load coder model: {e}")
+                return f"✗ Failed to load coder model: {e}"
 
         # Create PrimaryCoder instance
         coder = PrimaryCoder(coder_model.model_path, coder_model.config)
@@ -277,19 +290,26 @@ Answer:"""
         coder._loaded = coder_model._loaded
 
         # Build coding task from intent
-        task = self._build_coding_task_from_intent(intent, user_input)
+        with thinking(ThinkingStep.ANALYZING):
+            task = self._build_coding_task_from_intent(intent, user_input)
+            substep(f"Task type: {task.task_type}")
+            if task.target_files:
+                substep(f"Target: {', '.join(task.target_files)}")
 
         # Execute task
-        try:
-            result = coder.generate_code(task)
-        except Exception as e:
-            return f"✗ Code generation failed: {e}"
+        with thinking(ThinkingStep.GENERATING_CODE):
+            try:
+                result = coder.generate_code(task)
+            except Exception as e:
+                display_error(f"Code generation failed: {e}")
+                return f"✗ Code generation failed: {e}"
 
         # Check for escalation to algorithm specialist
         if result.needs_algorithm_specialist:
-            print("\n⚡ Escalating to Algorithm Specialist...")
+            step(ThinkingStep.ROUTING, "algorithm specialist")
             return self._escalate_to_algorithm(task, user_input, result)
 
+        complete("Code generated successfully")
         # Format and return result
         return self._format_code_result(result, task)
 
