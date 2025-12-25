@@ -144,8 +144,9 @@ class ModelLifecycleManager:
         # Track last usage time for LRU unloading
         self._last_used: Dict[ModelRole, float] = {}
 
-        # Thread safety for concurrent access
-        self._lock = Lock()
+        # Thread safety for concurrent access (use RLock for reentrant locking)
+        from threading import RLock
+        self._lock = RLock()
 
         # Load model configurations from config
         self.model_configs = self._load_model_configs()
