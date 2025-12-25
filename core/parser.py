@@ -1,10 +1,32 @@
-"""Natural language command parser for Codey"""
+"""Natural language command parser for Codey
+
+DEPRECATED: This module is deprecated in favor of router/intent_router.py
+which provides model-based intent classification with better accuracy.
+
+For new code, use:
+    from router.intent_router import IntentRouter
+    router = IntentRouter(model_path, config)
+    result = router.classify(user_input)
+"""
 import re
+import warnings
+
 
 class CommandParser:
-    """Parse natural language commands into structured actions"""
+    """Parse natural language commands into structured actions
+
+    DEPRECATED: Use router.IntentRouter instead for better accuracy.
+    This class remains for backward compatibility only.
+    """
 
     def __init__(self):
+        warnings.warn(
+            "CommandParser is deprecated. Use router.IntentRouter for "
+            "model-based intent classification with better accuracy.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+
         self.action_patterns = {
             'create': [
                 r'create\s+(?:a\s+)?(?:new\s+)?(?:file\s+)?(?:called\s+)?([^\s]+)',
