@@ -53,23 +53,15 @@ class PrimaryCoder(BaseModel):
     - Mathematical/computational problems
     """
 
-    SYSTEM_PROMPT = """You are an expert coding assistant powered by Qwen2.5-Coder. Generate clean, production-ready code with:
+    SYSTEM_PROMPT = """You are an expert coding assistant. Generate clean, working code.
 
-1. Clear structure and organization
-2. Proper error handling
-3. Type hints (Python) or type annotations
-4. Docstrings/comments for complex logic
-5. Following language best practices
+Rules:
+- Write complete, functional code
+- Use proper syntax and best practices
+- Add brief comments for complex logic
+- Output code in markdown code blocks using ```python or ```language
 
-When editing code:
-- Output ONLY the modified sections, not the entire file
-- Use clear markers: ```python\n# FILE: filename.py\n[code]\n```
-- Preserve existing functionality unless explicitly asked to change
-
-When you encounter algorithmic tasks requiring specialized knowledge (data structures, algorithms, performance optimization), indicate:
-NEEDS_ALGORITHM_SPECIALIST: true
-
-Always explain your reasoning briefly."""
+Be concise and direct."""
 
     # Keywords that trigger algorithm specialist escalation
     ALGORITHM_KEYWORDS = [
@@ -119,18 +111,58 @@ Always explain your reasoning briefly."""
         max_tokens = kwargs.get('max_tokens', 2048)
         stop = kwargs.get('stop', None)
 
-        # Generate using llama-cpp-python
-        response = self._model(
-            prompt,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            stop=stop,
-            echo=False
-        )
+        # Debug logging
+        print(f"\n[DEBUG] Starting generation...")
+        print(f"[DEBUG] Temperature: {temperature}, Max tokens: {max_tokens}")
+        print(f"[DEBUG] Stop sequences: {stop}")
+        print(f"[DEBUG] Prompt preview (first 500 chars):")
+        print(f"{prompt[:500]}")
+        print(f"[DEBUG] Prompt length: {len(prompt)} characters")
+        print(f"[DEBUG] Calling model inference...")
+
+        # Generate using llama-cpp-python with timeout protection
+        import time
+        import signal
+        from contextlib import contextmanager
+
+        @contextmanager
+        def timeout(seconds):
+            def timeout_handler(signum, frame):
+                raise TimeoutError(f"Generation exceeded {seconds} second timeout")
+
+            # Set signal handler (Unix only)
+            old_handler = signal.signal(signal.SIGALRM, timeout_handler)
+            signal.alarm(seconds)
+            try:
+                yield
+            finally:
+                signal.alarm(0)
+                signal.signal(signal.SIGALRM, old_handler)
+
+        start_time = time.time()
+
+        try:
+            with timeout(120):  # 120 second timeout (CPU inference is slow ~5 tokens/sec)
+                response = self._model(
+                    prompt,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    stop=stop,
+                    echo=False
+                )
+        except TimeoutError as e:
+            print(f"[ERROR] {e}")
+            raise RuntimeError(f"Generation timeout after 120 seconds - check CPU performance")
+
+        elapsed = time.time() - start_time
+        print(f"[DEBUG] Generation completed in {elapsed:.2f} seconds")
 
         # Extract generated text
         if isinstance(response, dict) and 'choices' in response:
-            return response['choices'][0]['text']
+            result = response['choices'][0]['text']
+            print(f"[DEBUG] Generated {len(result)} characters")
+            print(f"[DEBUG] Response preview (first 200 chars): {result[:200]}")
+            return result
 
         return str(response)
 
@@ -161,19 +193,27 @@ Always explain your reasoning briefly."""
         prompt = self._build_coding_prompt(task)
 
         try:
-            # Generate code
+            # Generate code with proper stop sequences
+            # Use common markdown and code delimiters
+            print(f"[DEBUG] Generating code for task type: {task.task_type}")
+
             response = self.generate(
                 prompt,
                 temperature=self.config.get("temperature", 0.3),
-                max_tokens=self.config.get("max_tokens", 2048),
-                stop=["</code>", "```\n\n\n"]
+                max_tokens=512,  # Reasonable size for code generation
+                stop=["</s>", "\n\n\n", "User:", "Human:", "<|im_end|>"]  # Proper stop sequences
             )
 
             # Parse response
+            print(f"[DEBUG] Parsing response...")
             result = self._parse_code_response(response, task)
+            print(f"[DEBUG] Parse result: success={result.success}, needs_algo={result.needs_algorithm_specialist}")
             return result
 
         except Exception as e:
+            print(f"[ERROR] Code generation failed: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return CodeResult(
                 success=False,
                 error=f"Code generation failed: {str(e)}"
@@ -314,53 +354,44 @@ Review:"""
         Returns:
             Formatted prompt string
         """
-        prompt_parts = [self.SYSTEM_PROMPT, "\n\n"]
-
-        # Task type specific instructions
+        # Ultra-simplified prompt format
         if task.task_type == "create":
-            prompt_parts.append(f"Create new {task.language} file(s): {', '.join(task.target_files)}\n")
-            prompt_parts.append(f"Requirements: {task.instructions}\n")
+            # Very simple and direct prompt
+            prompt = f"Write {task.language} code for: {task.instructions}\n\nCode:"
+            return prompt
 
         elif task.task_type == "edit":
-            prompt_parts.append(f"Edit {task.language} file(s): {', '.join(task.target_files)}\n")
-            prompt_parts.append(f"Changes needed: {task.instructions}\n\n")
+            prompt_parts = [f"Edit {task.language} code: {task.instructions}\n\n"]
 
-            # Include existing code
             if task.existing_code:
                 for filename, content in task.existing_code.items():
-                    prompt_parts.append(f"Current code in {filename}:\n```{task.language}\n{content}\n```\n\n")
+                    prompt_parts.append(f"Current {filename}:\n```{task.language}\n{content}\n```\n\n")
+
+            prompt_parts.append(f"Output the modified code:\n```{task.language}\n")
+            return "".join(prompt_parts)
 
         elif task.task_type == "refactor":
-            prompt_parts.append(f"Refactor {task.language} code in: {', '.join(task.target_files)}\n")
-            prompt_parts.append(f"Goal: {task.instructions}\n\n")
+            prompt_parts = [f"Refactor {task.language} code: {task.instructions}\n\n"]
 
             if task.existing_code:
                 for filename, content in task.existing_code.items():
-                    prompt_parts.append(f"Code to refactor ({filename}):\n```{task.language}\n{content}\n```\n\n")
+                    prompt_parts.append(f"```{task.language}\n{content}\n```\n\n")
+
+            prompt_parts.append(f"Output refactored code:\n```{task.language}\n")
+            return "".join(prompt_parts)
 
         elif task.task_type == "fix":
-            prompt_parts.append(f"Fix issue in {task.language} file(s): {', '.join(task.target_files)}\n")
-            prompt_parts.append(f"Issue: {task.instructions}\n\n")
+            prompt_parts = [f"Fix this {task.language} code: {task.instructions}\n\n"]
 
             if task.existing_code:
                 for filename, content in task.existing_code.items():
-                    prompt_parts.append(f"Code with issue ({filename}):\n```{task.language}\n{content}\n```\n\n")
+                    prompt_parts.append(f"```{task.language}\n{content}\n```\n\n")
 
-        # Add constraints if any
-        if task.constraints:
-            prompt_parts.append("Constraints:\n")
-            for constraint in task.constraints:
-                prompt_parts.append(f"- {constraint}\n")
-            prompt_parts.append("\n")
+            prompt_parts.append(f"Output fixed code:\n```{task.language}\n")
+            return "".join(prompt_parts)
 
-        # Add context if provided
-        if task.context:
-            prompt_parts.append(f"Context: {task.context}\n\n")
-
-        # Add generation instruction
-        prompt_parts.append(f"Generate the {task.task_type} code:\n")
-
-        return "".join(prompt_parts)
+        # Fallback
+        return f"Write {task.language} code: {task.instructions}\n\n```{task.language}\n"
 
     def _parse_code_response(self, response: str, task: CodingTask) -> CodeResult:
         """Parse model response into CodeResult

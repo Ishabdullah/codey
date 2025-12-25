@@ -123,14 +123,46 @@ Always prioritize correctness over cleverness. Explain trade-offs clearly."""
         max_tokens = kwargs.get('max_tokens', 4096)
         stop = kwargs.get('stop', None)
 
-        # Generate using llama-cpp-python
-        response = self._model(
-            prompt,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            stop=stop,
-            echo=False
-        )
+        # Debug logging
+        print(f"\n[DEBUG ALGO] Starting generation...")
+        print(f"[DEBUG ALGO] Temperature: {temperature}, Max tokens: {max_tokens}")
+        print(f"[DEBUG ALGO] Calling model inference...")
+
+        # Generate using llama-cpp-python with timeout protection
+        import time
+        import signal
+        from contextlib import contextmanager
+
+        @contextmanager
+        def timeout(seconds):
+            def timeout_handler(signum, frame):
+                raise TimeoutError(f"Generation exceeded {seconds} second timeout")
+
+            old_handler = signal.signal(signal.SIGALRM, timeout_handler)
+            signal.alarm(seconds)
+            try:
+                yield
+            finally:
+                signal.alarm(0)
+                signal.signal(signal.SIGALRM, old_handler)
+
+        start_time = time.time()
+
+        try:
+            with timeout(300):  # 300 second timeout (CPU inference is slow, algorithm tasks need more tokens - ~5 tok/sec)
+                response = self._model(
+                    prompt,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    stop=stop,
+                    echo=False
+                )
+        except TimeoutError as e:
+            print(f"[ERROR] {e}")
+            raise RuntimeError(f"Generation timeout after 300 seconds - check CPU performance")
+
+        elapsed = time.time() - start_time
+        print(f"[DEBUG ALGO] Generation completed in {elapsed:.2f} seconds")
 
         # Extract generated text
         if isinstance(response, dict) and 'choices' in response:
@@ -157,12 +189,13 @@ Always prioritize correctness over cleverness. Explain trade-offs clearly."""
         prompt = self._build_algorithm_prompt(task)
 
         try:
-            # Generate solution
+            # Generate solution with better stop sequences
+            print(f"[DEBUG ALGO] Solving algorithm task...")
             response = self.generate(
                 prompt,
                 temperature=self.config.get("temperature", 0.2),
-                max_tokens=self.config.get("max_tokens", 4096),
-                stop=["</code>", "```\n\n\n", "## Next"]
+                max_tokens=min(self.config.get("max_tokens", 4096), 1024),  # Limit to 1024 for CPU performance
+                stop=["</s>", "\n\n\n", "## Next", "User:", "Human:", "<|im_end|>"]
             )
 
             # Parse response
