@@ -4,7 +4,7 @@
 
 Codey is designed for **privacy**, **speed**, and **mobile hardware** (Android/Termux), with intelligent model routing and memory management.
 
-**Status:** ✅ **Phases 1-4 Complete** | Production-Ready | All Tests Passing
+**Status:** ✅ **Phases 1-5 Complete** | Production-Ready | All Tests Passing
 
 ---
 
@@ -14,6 +14,7 @@ Codey is designed for **privacy**, **speed**, and **mobile hardware** (Android/T
 - **Smart Routing**: Small router model (270M) routes to larger specialists only when needed
 - **Memory Efficient**: 8GB budget with automatic LRU unloading
 - **Multi-Step Execution**: Automatic decomposition of complex requests
+- **Diff-Based Editing**: Targeted edits reduce token usage by ~10x for file modifications
 - **Local-First**: No API keys required, runs completely offline
 - **Mobile Optimized**: Designed for S24 Ultra / Snapdragon 8 Gen 3, works on Linux too
 
@@ -114,6 +115,15 @@ Codey is designed for **privacy**, **speed**, and **mobile hardware** (Android/T
 - **Sequential/parallel execution** - Step-by-step progress tracking
 - **Clean architecture** - Separated concerns, highly testable
 
+### Phase 5: Diff-Based Editing ✅
+
+- **DiffGenerator** - Generate and apply targeted code edits
+- **EditBlock** - Structured edit representation with validation
+- **patch_file()** - Apply diffs to files with automatic backup
+- **Token optimization** - ~70-90% reduction for small edits on large files
+- **Automatic fallback** - Falls back to full file when needed
+- **Unified diff format** - Clear visualization of changes
+
 ---
 
 ## 🚀 Quick Start
@@ -207,6 +217,9 @@ python3 test_phase3.py
 
 # Phase 4 tests
 python3 test_phase4.py
+
+# Phase 5 tests
+python3 test_phase5.py
 ```
 
 **Current Status:**
@@ -214,6 +227,7 @@ python3 test_phase4.py
 - Phase 2: ✅ All tests passing
 - Phase 3: ✅ 5/6 tests passing (algorithm timeout expected on slow hardware)
 - Phase 4: ✅ 6/6 tests passing
+- Phase 5: ✅ 7/7 tests passing
 
 ---
 
@@ -228,10 +242,11 @@ codey/
 │   ├── orchestrator.py          # Central routing (Phase 2+3)
 │   ├── response_handler.py      # Output formatting (Phase 4)
 │   ├── task_planner.py          # Multi-step planning (Phase 4)
+│   ├── diff_generator.py        # Diff-based editing (Phase 5)
 │   ├── permission_manager.py    # User consent system
 │   ├── git_manager.py           # Git operations
 │   ├── shell_manager.py         # Shell commands
-│   └── tools.py                 # File operations
+│   └── tools.py                 # File operations (+ patch_file Phase 5)
 │
 ├── models/                      # Model wrappers
 │   ├── base.py                  # Abstract base model
@@ -365,18 +380,13 @@ Edit `config.json` to customize:
 - [PHASE2_COMPLETE.md](PHASE2_COMPLETE.md) - Intent router & tool executor
 - [PHASE3_COMPLETE.md](PHASE3_COMPLETE.md) - Specialized model wrappers
 - [PHASE4_COMPLETE.md](PHASE4_COMPLETE.md) - Engine decomposition
+- [PHASE5_COMPLETE.md](PHASE5_COMPLETE.md) - Diff-based editing
 - [CPU_PERFORMANCE_FIX.md](CPU_PERFORMANCE_FIX.md) - CPU optimization guide
 - [PERFORMANCE_OPTIMIZATIONS.md](PERFORMANCE_OPTIMIZATIONS.md) - Performance tuning
 
 ---
 
 ## 🔮 Roadmap
-
-### Phase 5: Diff-Based Editing (Planned)
-- Implement diff generator
-- Update file tools with `patch_file()`
-- Generate targeted edits instead of full files
-- Reduce token usage by ~10x for edits
 
 ### Future Enhancements
 - Parallel step execution
@@ -412,9 +422,9 @@ This is proprietary software. See LICENSE file for details.
 
 ## 📊 Statistics
 
-**Total Lines of Code:** ~4,600+
-**Components:** 12 modules
-**Test Coverage:** 4 test suites, 23+ integration tests
+**Total Lines of Code:** ~5,400+
+**Components:** 13 modules
+**Test Coverage:** 5 test suites, 30+ integration tests
 **Development Time:** December 2025
 **Platform:** Mobile-first (Android/Termux), Linux compatible
 

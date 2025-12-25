@@ -534,3 +534,86 @@ Review:"""
 
         suffix = Path(filename).suffix.lower()
         return ext_map.get(suffix, 'python')
+
+    def generate_diff_edits(self, task: CodingTask, use_diff: bool = True):
+        """Generate diff-based edits instead of full file regeneration (Phase 5)
+
+        This method uses the DiffGenerator to create targeted edits,
+        which can reduce token usage by ~10x for large files.
+
+        Args:
+            task: CodingTask with task_type="edit" or "fix"
+            use_diff: If True, generate diffs; if False, fall back to full file
+
+        Returns:
+            CodeResult with edit blocks instead of full code (if use_diff=True)
+        """
+        from core.diff_generator import DiffGenerator
+
+        if not self._loaded:
+            return CodeResult(
+                success=False,
+                error="Model not loaded. Call load() first."
+            )
+
+        # Only use diff mode for edit/fix tasks with existing code
+        if task.task_type not in ["edit", "fix"] or not task.existing_code or not use_diff:
+            # Fall back to regular code generation
+            return self.generate_code(task)
+
+        # Get the file to edit
+        if len(task.target_files) != 1 or len(task.existing_code) != 1:
+            # Diff mode works best with single file edits
+            return self.generate_code(task)
+
+        filename = task.target_files[0]
+        original_code = task.existing_code[filename]
+
+        # Build diff-specific prompt
+        diff_gen = DiffGenerator()
+        prompt = diff_gen.generate_edit_prompt(filename, original_code, task.instructions)
+
+        try:
+            print(f"[DEBUG] Generating diff edits for: {filename}")
+
+            response = self.generate(
+                prompt,
+                temperature=self.config.get("temperature", 0.3),
+                max_tokens=1024,  # Diffs typically need more tokens than regular code
+                stop=["</s>", "\n\n\n", "User:", "Human:", "<|im_end|>"]
+            )
+
+            # Parse edit blocks
+            print(f"[DEBUG] Parsing edit blocks from response...")
+            edit_blocks = diff_gen.parse_edit_blocks(response)
+
+            if not edit_blocks:
+                print(f"[DEBUG] No edit blocks found, falling back to full file generation")
+                return self.generate_code(task)
+
+            # Validate edits
+            errors = diff_gen.validate_edits(original_code, edit_blocks)
+            if errors:
+                print(f"[WARNING] Edit validation failed: {errors}")
+                return CodeResult(
+                    success=False,
+                    error=f"Generated edits failed validation:\n" + "\n".join(errors)
+                )
+
+            # Store edit blocks in metadata
+            return CodeResult(
+                success=True,
+                code=None,  # No full code, just edits
+                explanation=f"Generated {len(edit_blocks)} targeted edits",
+                metadata={
+                    "edit_blocks": edit_blocks,
+                    "filename": filename,
+                    "original_code": original_code,
+                    "diff_mode": True
+                }
+            )
+
+        except Exception as e:
+            print(f"[ERROR] Diff generation failed: {str(e)}")
+            print(f"[DEBUG] Falling back to full file generation")
+            return self.generate_code(task)

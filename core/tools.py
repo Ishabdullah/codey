@@ -155,3 +155,69 @@ class FileTools:
             'exists': path.exists(),
             'path': str(path)
         }
+
+    def patch_file(self, filepath, edits):
+        """Apply diff-based edits to a file (Phase 5)
+
+        Args:
+            filepath: Path to file to patch
+            edits: List of EditBlock objects from DiffGenerator
+
+        Returns:
+            Dict with success status, path, backup info
+        """
+        from core.diff_generator import DiffGenerator
+
+        # Read original file
+        read_result = self.read_file(filepath)
+        if not read_result['success']:
+            return read_result
+
+        original = read_result['content']
+
+        # Initialize diff generator
+        diff_gen = DiffGenerator()
+
+        # Validate edits
+        errors = diff_gen.validate_edits(original, edits)
+        if errors:
+            return {
+                'success': False,
+                'error': f"Invalid edits:\n" + "\n".join(errors),
+                'path': str(self._resolve_path(filepath))
+            }
+
+        # Backup before applying edits
+        backup_path = self._backup_file(filepath)
+
+        # Apply edits
+        try:
+            new_content = diff_gen.apply_edits(original, edits)
+
+            # Write patched content
+            write_result = self.write_file(filepath, new_content, overwrite=True)
+
+            if write_result['success']:
+                # Generate diff for display
+                unified_diff = diff_gen.generate_unified_diff(original, new_content, filepath)
+
+                # Estimate token savings
+                savings = diff_gen.estimate_token_savings(original, edits)
+
+                return {
+                    'success': True,
+                    'path': write_result['path'],
+                    'backup': str(backup_path) if backup_path else None,
+                    'num_edits': len(edits),
+                    'diff': unified_diff,
+                    'token_savings': savings
+                }
+            else:
+                return write_result
+
+        except Exception as e:
+            return {
+                'success': False,
+                'error': f"Failed to apply edits: {str(e)}",
+                'path': str(self._resolve_path(filepath))
+            }
