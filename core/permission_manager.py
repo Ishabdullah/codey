@@ -70,7 +70,7 @@ class PermissionManager:
     def request_git_commit(self, message: str, files: List[str]) -> bool:
         """Request permission to create a git commit"""
         print(f"\n{permission(f'{Icons.LOCK} Permission required:')} {bold('Create git commit?')}")
-        print(f"   Message: {info(f'"{message}"')}")
+        print(f"   Message: {info(message)}")
         print(f"   Files: {len(files)} file(s)")
         if len(files) <= 5:
             for f in files:

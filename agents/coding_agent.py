@@ -1,12 +1,44 @@
-"""Coding agent with improved prompting and reasoning"""
+"""Coding agent with improved prompting and reasoning
+
+NOTE: This agent is being phased out in favor of core/orchestrator.py with models/coder.py.
+For new code, use the Orchestrator which provides better model routing and escalation.
+
+This agent remains for backward compatibility with existing code.
+"""
+import warnings
+from typing import Optional
+from models.lifecycle import ModelLifecycleManager, ModelRole
+
 
 class CodingAgent:
-    """Agent specialized in code generation and manipulation"""
+    """Agent specialized in code generation and manipulation
 
-    def __init__(self, model_manager, file_tools, config):
+    DEPRECATED: Use core.Orchestrator with models.coder.PrimaryCoder for new code.
+    This class remains for backward compatibility.
+    """
+
+    def __init__(self, model_manager, file_tools, config, lifecycle_manager: Optional[ModelLifecycleManager] = None):
+        """Initialize coding agent
+
+        Args:
+            model_manager: Legacy ModelManager or lifecycle manager
+            file_tools: FileTools instance
+            config: Configuration object
+            lifecycle_manager: Optional ModelLifecycleManager for Phase 3+ features
+        """
+        warnings.warn(
+            "CodingAgent is deprecated. Use core.Orchestrator with models.coder.PrimaryCoder instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+
         self.model = model_manager
         self.tools = file_tools
         self.config = config
+        self.lifecycle = lifecycle_manager
+
+        # Try to use new PrimaryCoder if lifecycle manager available
+        self.use_primary_coder = lifecycle_manager is not None
 
     def create_file(self, filename, instructions):
         """Generate and create a new file"""
@@ -61,7 +93,19 @@ class CodingAgent:
         return result
 
     def _generate_code(self, filename, instructions, existing_code=None):
-        """Generate code using the model"""
+        """Generate code using the model
+
+        Uses PrimaryCoder if lifecycle manager available, otherwise falls back to legacy.
+        """
+        # Try new PrimaryCoder approach if available
+        if self.use_primary_coder and self.lifecycle:
+            try:
+                return self._generate_with_primary_coder(filename, instructions, existing_code)
+            except Exception as e:
+                print(f"PrimaryCoder failed, falling back to legacy: {e}")
+                # Fall through to legacy approach
+
+        # Legacy approach
         extension = filename.split('.')[-1] if '.' in filename else 'py'
         language = self._infer_language(extension)
 
@@ -86,6 +130,63 @@ class CodingAgent:
         except Exception as e:
             print(f"Error generating code: {e}")
             return None
+
+    def _generate_with_primary_coder(self, filename, instructions, existing_code=None):
+        """Generate code using new PrimaryCoder model
+
+        Args:
+            filename: Target filename
+            instructions: What to generate
+            existing_code: Existing code if editing
+
+        Returns:
+            Generated code string or None
+        """
+        from models.coder import PrimaryCoder, CodingTask
+
+        # Load coder model
+        coder_model = self.lifecycle.ensure_loaded(ModelRole.CODER)
+
+        # Create PrimaryCoder instance
+        coder = PrimaryCoder(coder_model.model_path, coder_model.config)
+        coder._model = coder_model._model
+        coder._loaded = coder_model._loaded
+
+        # Determine task type
+        task_type = 'edit' if existing_code else 'create'
+
+        # Prepare existing code dict if needed
+        existing_dict = {filename: existing_code} if existing_code else None
+
+        # Infer language
+        extension = filename.split('.')[-1] if '.' in filename else 'py'
+        language = self._infer_language(extension)
+
+        # Build coding task
+        task = CodingTask(
+            task_type=task_type,
+            target_files=[filename],
+            instructions=instructions,
+            existing_code=existing_dict,
+            language=language,
+            constraints=[]
+        )
+
+        # Generate code
+        result = coder.generate_code(task)
+
+        if not result.success:
+            raise Exception(result.error or "Code generation failed")
+
+        # Extract code for this file
+        if result.code and filename in result.code:
+            return result.code[filename]
+
+        # Try first available code
+        if result.code:
+            return list(result.code.values())[0]
+
+        return None
 
     def _build_create_prompt(self, filename, language, instructions):
         """Build prompt for creating new code"""

@@ -16,7 +16,7 @@ Codey is designed for **privacy**, **speed**, and **mobile hardware** (Android/T
 
 ---
 
-## 🏗️ Architecture (Phase 1 + 2 Complete)
+## 🏗️ Architecture (Phase 1 + 2 + 3 Complete)
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -44,7 +44,7 @@ Codey is designed for **privacy**, **speed**, and **mobile hardware** (Android/T
                                   │ Algorithm   │
     TOOL EXECUTOR (Phase 2)       │  6.7B       │
     No model needed!              └─────────────┘
-    ~50-100ms latency              (Phase 3 - TBD)
+    ~50-100ms latency              (Phase 3 - COMPLETE ✅)
 ```
 
 ### Model Stack
@@ -52,8 +52,8 @@ Codey is designed for **privacy**, **speed**, and **mobile hardware** (Android/T
 | Role | Model | Size | RAM | When Loaded |
 |------|-------|------|-----|-------------|
 | **Intent Router** | FunctionGemma 270M Q8_0 | 279MB | ~335MB | Always resident |
-| **Primary Coder** | Qwen2.5-Coder 7B Q4_K_M | 4.4GB | ~5.3GB | On-demand (Phase 3) |
-| **Algorithm Specialist** | DeepSeek-Coder 6.7B Q4_K_M | 3.9GB | ~5.0GB | Cold-loaded (Phase 3) |
+| **Primary Coder** | Qwen2.5-Coder 7B Q4_K_M | 4.4GB | ~5.3GB | On-demand ✅ |
+| **Algorithm Specialist** | DeepSeek-Coder 6.7B Q4_K_M | 3.9GB | ~5.0GB | Cold-loaded ✅ |
 
 ---
 
@@ -73,9 +73,16 @@ Codey is designed for **privacy**, **speed**, and **mobile hardware** (Android/T
 - **10-100x faster** for git/shell/file operations
 - **Regex fallback** for uncertain classifications
 
-### Phase 3-5: Coming Soon ⏳
+### Phase 3: Specialized Model Wrappers ✅
 
-- Specialized model wrappers (Qwen/DeepSeek)
+- **Primary Coder** (Qwen2.5-Coder 7B) for code generation, editing, refactoring
+- **Algorithm Specialist** (DeepSeek-Coder 6.7B) for algorithms and data structures
+- **Automatic escalation** from coder to algorithm specialist
+- **Complexity analysis** (time/space) for algorithmic solutions
+- **Multi-language support** (Python, JavaScript, C++, Java, etc.)
+
+### Phase 4-5: Coming Soon ⏳
+
 - Engine decomposition (<200 lines)
 - Diff-based editing (10x fewer tokens)
 
@@ -121,15 +128,15 @@ Expected: **All tests passing** ✅
 
 ## 📖 Usage
 
-### Current (Phase 2)
+### Current (Phase 3)
 
-Phase 2 supports intelligent routing and direct tool execution:
+Phase 3 supports full multi-model routing with specialized code generation:
 
 ```python
 from core.orchestrator import Orchestrator
 from utils.config import Config
 from models.lifecycle import ModelLifecycleManager
-# ... (see PHASE2_TESTING.md for full setup)
+# ... (see PHASE3_TESTING.md for full setup)
 
 config = Config()
 lifecycle = ModelLifecycleManager(config)
@@ -142,9 +149,13 @@ response = orchestrator.process("list files")
 # Simple answers via router
 response = orchestrator.process("what is python?")
 
-# Coding/algorithm tasks (Phase 3+)
-response = orchestrator.process("create a file test.py")
-# → Returns placeholder message (to be implemented in Phase 3)
+# Coding tasks (Qwen2.5-Coder 7B)
+response = orchestrator.process("create a file calculator.py with basic math functions")
+# → Generates complete code with Primary Coder
+
+# Algorithm tasks (DeepSeek-Coder 6.7B)
+response = orchestrator.process("implement quicksort with O(n log n) complexity")
+# → Generates algorithm with complexity analysis
 ```
 
 ### Legacy (Still Works)
@@ -166,23 +177,25 @@ response = engine.process_command("create test.py that prints hello world")
 |------|---------|---------------|
 | **Phase 1** | `python3 test_phase1.py` | Multi-model lifecycle, memory management |
 | **Phase 2** | `python3 test_phase2.py` | Intent routing, tool execution |
+| **Phase 3** | `python3 test_phase3.py` | Specialized models, code generation, escalation |
 | **Unit Tests** | `pytest tests/ -v` | Individual components |
 
 ### Quick Test
 
 ```bash
-python3 test_phase2.py
+python3 test_phase3.py
 ```
 
 Expected output:
 ```
-✓ PASS: classification
-✓ PASS: tool_execution
-✓ PASS: orchestrator
-✓ PASS: fallback
-✓ PASS: memory
+✓ PASS: Primary Coder - Create
+✓ PASS: Primary Coder - Escalation
+✓ PASS: Algorithm Specialist
+✓ PASS: Orchestrator - Coding
+✓ PASS: Orchestrator - Algorithm
+✓ PASS: Memory Management
 
-🎉 ALL TESTS PASSED - PHASE 2 COMPLETE!
+🎉 ALL TESTS PASSED - PHASE 3 COMPLETE!
 ```
 
 ---
@@ -320,9 +333,9 @@ Phase 2 uses **92% less memory** when idle!
 
 ## 🚧 Roadmap
 
-- [x] **Phase 1**: Multi-model lifecycle manager
-- [x] **Phase 2**: Intent router & tool executor
-- [ ] **Phase 3**: Specialized model wrappers (Qwen/DeepSeek)
+- [x] **Phase 1**: Multi-model lifecycle manager ✅
+- [x] **Phase 2**: Intent router & tool executor ✅
+- [x] **Phase 3**: Specialized model wrappers (Qwen/DeepSeek) ✅
 - [ ] **Phase 4**: Engine decomposition (<200 lines)
 - [ ] **Phase 5**: Diff-based editing
 
@@ -339,7 +352,10 @@ See `REFACTORING_PLAN.md` for full details.
 | **REFACTORING_PLAN.md** | Full architecture plan |
 | **PHASE1_TESTING.md** | Phase 1 testing guide |
 | **PHASE2_TESTING.md** | Phase 2 testing guide |
+| **PHASE3_TESTING.md** | Phase 3 testing guide |
 | **PHASE1_COMPLETE.md** | Phase 1 summary |
+| **PHASE2_COMPLETE.md** | Phase 2 summary |
+| **PHASE3_COMPLETE.md** | Phase 3 summary |
 
 ---
 
@@ -378,6 +394,6 @@ Proprietary - See LICENSE file
 
 ---
 
-**Current Status:** Phase 2 Complete ✅
+**Current Status:** Phase 3 Complete ✅
 
-Run `python3 test_phase2.py` to verify your installation!
+Run `python3 test_phase3.py` to verify your installation!

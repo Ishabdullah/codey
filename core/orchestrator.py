@@ -1,9 +1,11 @@
 """Orchestrator - Central coordination between router, models, and tools"""
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 from models.lifecycle import ModelLifecycleManager, ModelRole
 from router.intent_router import IntentRouter, IntentResult
 from executor.tool_executor import ToolExecutor, ToolResult
+from models.coder import PrimaryCoder, CodingTask, CodeResult
+from models.algorithm_model import AlgorithmSpecialist, AlgorithmTask, AlgorithmResult
 
 
 class Orchestrator:
@@ -259,15 +261,234 @@ Answer:"""
             user_input: Original user input
 
         Returns:
-            Coding result or placeholder
+            Coding result
         """
-        # Phase 2: Placeholder for Phase 3 implementation
-        return (
-            f"🔄 Coding task detected (confidence: {intent.confidence:.2f})\n\n"
-            f"This will be handled by Qwen2.5-Coder 7B in Phase 3.\n"
-            f"For now, you can use the legacy engine via 'core/engine_v2.py'.\n\n"
-            f"Task: {user_input}"
+        print("Loading Qwen2.5-Coder 7B for coding task...")
+
+        # Load primary coder model
+        try:
+            coder_model = self.lifecycle.ensure_loaded(ModelRole.CODER)
+        except Exception as e:
+            return f"✗ Failed to load coder model: {e}"
+
+        # Create PrimaryCoder instance
+        coder = PrimaryCoder(coder_model.model_path, coder_model.config)
+        coder._model = coder_model._model
+        coder._loaded = coder_model._loaded
+
+        # Build coding task from intent
+        task = self._build_coding_task_from_intent(intent, user_input)
+
+        # Execute task
+        try:
+            result = coder.generate_code(task)
+        except Exception as e:
+            return f"✗ Code generation failed: {e}"
+
+        # Check for escalation to algorithm specialist
+        if result.needs_algorithm_specialist:
+            print("\n⚡ Escalating to Algorithm Specialist...")
+            return self._escalate_to_algorithm(task, user_input, result)
+
+        # Format and return result
+        return self._format_code_result(result, task)
+
+    def _build_coding_task_from_intent(self, intent: IntentResult, user_input: str) -> CodingTask:
+        """Build CodingTask from intent classification
+
+        Args:
+            intent: Intent classification result
+            user_input: Original user input
+
+        Returns:
+            CodingTask object
+        """
+        params = intent.params
+
+        # Determine task type
+        task_type = params.get('task_type', 'create')
+        if 'create' in user_input.lower() or 'write' in user_input.lower() or 'generate' in user_input.lower():
+            task_type = 'create'
+        elif 'edit' in user_input.lower() or 'modify' in user_input.lower() or 'update' in user_input.lower():
+            task_type = 'edit'
+        elif 'refactor' in user_input.lower() or 'reorganize' in user_input.lower():
+            task_type = 'refactor'
+        elif 'fix' in user_input.lower() or 'debug' in user_input.lower() or 'bug' in user_input.lower():
+            task_type = 'fix'
+        elif 'explain' in user_input.lower():
+            task_type = 'explain'
+
+        # Extract target files
+        target_files = params.get('files', [])
+        if not target_files:
+            # Try to infer filename from user input
+            filename = self._extract_filename_from_input(user_input)
+            if filename:
+                target_files = [filename]
+            else:
+                target_files = ['generated_code.py']
+
+        # Get existing code if editing
+        existing_code = None
+        if task_type in ['edit', 'refactor', 'fix']:
+            existing_code = self._get_existing_code(target_files)
+
+        # Infer language from first target file
+        language = self._infer_language(target_files[0]) if target_files else 'python'
+
+        return CodingTask(
+            task_type=task_type,
+            target_files=target_files,
+            instructions=user_input,
+            existing_code=existing_code,
+            language=language,
+            constraints=[]
         )
+
+    def _extract_filename_from_input(self, user_input: str) -> Optional[str]:
+        """Extract filename from user input
+
+        Args:
+            user_input: User's request
+
+        Returns:
+            Filename if found, None otherwise
+        """
+        import re
+
+        # Look for filename with extension
+        match = re.search(r'([a-zA-Z0-9_.-]+\.[a-zA-Z0-9]+)', user_input)
+        if match:
+            return match.group(1)
+
+        # Look for quoted filename
+        match = re.search(r'["\']([a-zA-Z0-9_.-]+)["\']', user_input)
+        if match:
+            return match.group(1)
+
+        return None
+
+    def _get_existing_code(self, files: List[str]) -> Optional[Dict[str, str]]:
+        """Get existing code for files
+
+        Args:
+            files: List of filenames
+
+        Returns:
+            Dict mapping filename to content, or None
+        """
+        existing = {}
+
+        for filename in files:
+            # Try to read file using ToolExecutor
+            result = self.tools.execute("file", {"action": "read", "filename": filename})
+            if result.success and result.output:
+                existing[filename] = result.output
+
+        return existing if existing else None
+
+    def _infer_language(self, filename: str) -> str:
+        """Infer programming language from filename
+
+        Args:
+            filename: Name of file
+
+        Returns:
+            Language name
+        """
+        from pathlib import Path
+
+        ext_map = {
+            '.py': 'python',
+            '.js': 'javascript',
+            '.ts': 'typescript',
+            '.java': 'java',
+            '.cpp': 'cpp',
+            '.c': 'c',
+            '.go': 'go',
+            '.rs': 'rust',
+            '.rb': 'ruby',
+            '.php': 'php',
+        }
+
+        suffix = Path(filename).suffix.lower()
+        return ext_map.get(suffix, 'python')
+
+    def _format_code_result(self, result: CodeResult, task: CodingTask) -> str:
+        """Format code generation result for display
+
+        Args:
+            result: CodeResult from coder
+            task: Original CodingTask
+
+        Returns:
+            Formatted string
+        """
+        if not result.success:
+            return f"✗ Code generation failed: {result.error}"
+
+        response = f"✓ {task.task_type.capitalize()} completed\n\n"
+
+        # Show explanation if present
+        if result.explanation:
+            response += f"{result.explanation}\n\n"
+
+        # Show generated code
+        if result.code:
+            for filename, code in result.code.items():
+                response += f"File: {filename}\n```{task.language}\n{code}\n```\n\n"
+
+        # Show warnings if any
+        if result.warnings:
+            response += "Warnings:\n"
+            for warning in result.warnings:
+                response += f"  ⚠️  {warning}\n"
+
+        return response.strip()
+
+    def _escalate_to_algorithm(self, coding_task: CodingTask, user_input: str, partial_result: CodeResult) -> str:
+        """Escalate coding task to algorithm specialist
+
+        Args:
+            coding_task: Original coding task
+            user_input: User's request
+            partial_result: Partial result from coder
+
+        Returns:
+            Algorithm specialist result
+        """
+        # Unload coder to free memory
+        print("Unloading coder model to free memory...")
+        self.lifecycle.unload_model(ModelRole.CODER)
+
+        # Load algorithm specialist
+        print("Loading DeepSeek-Coder 6.7B (Algorithm Specialist)...")
+        try:
+            algo_model = self.lifecycle.ensure_loaded(ModelRole.ALGORITHM)
+        except Exception as e:
+            return f"✗ Failed to load algorithm specialist: {e}"
+
+        # Create AlgorithmSpecialist instance
+        specialist = AlgorithmSpecialist(algo_model.model_path, algo_model.config)
+        specialist._model = algo_model._model
+        specialist._loaded = algo_model._loaded
+
+        # Build algorithm task
+        task = AlgorithmTask(
+            problem_description=user_input,
+            language=coding_task.language,
+            constraints=coding_task.constraints,
+            context_code=partial_result.explanation if partial_result.explanation else None
+        )
+
+        # Execute
+        try:
+            result = specialist.solve(task)
+        except Exception as e:
+            return f"✗ Algorithm generation failed: {e}"
+
+        # Format result
+        return self._format_algorithm_result(result, task)
 
     def _handle_algorithm_task(self, intent: IntentResult, user_input: str) -> str:
         """Handle algorithm tasks - escalate to algorithm specialist
@@ -277,14 +498,124 @@ Answer:"""
             user_input: Original user input
 
         Returns:
-            Algorithm result or placeholder
+            Algorithm result
         """
-        # Phase 2: Placeholder for Phase 3 implementation
-        return (
-            f"🔄 Algorithm task detected (confidence: {intent.confidence:.2f})\n\n"
-            f"This will be handled by DeepSeek-Coder 6.7B in Phase 3.\n\n"
-            f"Task: {user_input}"
+        print("Loading DeepSeek-Coder 6.7B (Algorithm Specialist)...")
+
+        # Load algorithm specialist
+        try:
+            algo_model = self.lifecycle.ensure_loaded(ModelRole.ALGORITHM)
+        except Exception as e:
+            return f"✗ Failed to load algorithm specialist: {e}"
+
+        # Create AlgorithmSpecialist instance
+        specialist = AlgorithmSpecialist(algo_model.model_path, algo_model.config)
+        specialist._model = algo_model._model
+        specialist._loaded = algo_model._loaded
+
+        # Build algorithm task from intent
+        task = self._build_algorithm_task_from_intent(intent, user_input)
+
+        # Execute
+        try:
+            result = specialist.solve(task)
+        except Exception as e:
+            return f"✗ Algorithm generation failed: {e}"
+
+        # Format and return result
+        return self._format_algorithm_result(result, task)
+
+    def _build_algorithm_task_from_intent(self, intent: IntentResult, user_input: str) -> AlgorithmTask:
+        """Build AlgorithmTask from intent classification
+
+        Args:
+            intent: Intent classification result
+            user_input: Original user input
+
+        Returns:
+            AlgorithmTask object
+        """
+        params = intent.params
+
+        # Extract constraints from params or user input
+        constraints = params.get('constraints', [])
+
+        # Extract expected complexity if mentioned
+        expected_complexity = None
+        import re
+        complexity_match = re.search(r'O\(([^)]+)\)', user_input)
+        if complexity_match:
+            expected_complexity = f"O({complexity_match.group(1)})"
+
+        # Determine optimization goal
+        optimize_for = "time"  # Default
+        if 'space' in user_input.lower() and 'complex' in user_input.lower():
+            optimize_for = "space"
+        elif 'memory' in user_input.lower():
+            optimize_for = "space"
+        elif 'both' in user_input.lower():
+            optimize_for = "both"
+
+        # Infer language
+        language = 'python'  # Default
+        if 'java' in user_input.lower():
+            language = 'java'
+        elif 'c++' in user_input.lower() or 'cpp' in user_input.lower():
+            language = 'cpp'
+        elif 'javascript' in user_input.lower() or 'js' in user_input.lower():
+            language = 'javascript'
+
+        return AlgorithmTask(
+            problem_description=user_input,
+            constraints=constraints,
+            expected_complexity=expected_complexity,
+            language=language,
+            optimize_for=optimize_for
         )
+
+    def _format_algorithm_result(self, result: AlgorithmResult, task: AlgorithmTask) -> str:
+        """Format algorithm result for display
+
+        Args:
+            result: AlgorithmResult from specialist
+            task: Original AlgorithmTask
+
+        Returns:
+            Formatted string
+        """
+        if not result.success:
+            return f"✗ Algorithm generation failed: {result.error}"
+
+        response = "✓ Algorithm solution generated\n\n"
+
+        # Show complexity analysis
+        if result.complexity_analysis:
+            response += "Complexity Analysis:\n"
+            if 'time' in result.complexity_analysis:
+                response += f"  Time: {result.complexity_analysis['time']}\n"
+            if 'space' in result.complexity_analysis:
+                response += f"  Space: {result.complexity_analysis['space']}\n"
+            response += "\n"
+
+        # Show explanation
+        if result.explanation:
+            response += f"{result.explanation}\n\n"
+
+        # Show code
+        if result.code:
+            response += f"Implementation:\n```{task.language}\n{result.code}\n```\n\n"
+
+        # Show trade-offs if present
+        if result.trade_offs:
+            response += f"Trade-offs: {result.trade_offs}\n\n"
+
+        # Show warnings
+        if result.warnings:
+            response += "Warnings:\n"
+            for warning in result.warnings:
+                response += f"  ⚠️  {warning}\n"
+
+        return response.strip()
 
     def _handle_unknown(self, intent: IntentResult, user_input: str) -> str:
         """Handle unknown or low-confidence intents
