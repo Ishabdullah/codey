@@ -83,6 +83,61 @@ Structure your response as:
 
 Always prioritize correctness over cleverness. Explain trade-offs clearly."""
 
+    def load(self) -> None:
+        """Load model into memory
+
+        Note: In Phase 3, models are loaded by ModelLifecycleManager.
+        This method exists to satisfy BaseModel interface.
+        """
+        if self._loaded:
+            return
+
+        # Model should already be loaded by lifecycle manager
+        # This is just a placeholder to satisfy abstract method
+        self._loaded = True
+
+    def unload(self) -> None:
+        """Unload model from memory
+
+        Note: In Phase 3, models are unloaded by ModelLifecycleManager.
+        This method exists to satisfy BaseModel interface.
+        """
+        self._model = None
+        self._loaded = False
+
+    def generate(self, prompt: str, **kwargs) -> str:
+        """Generate text from prompt
+
+        Args:
+            prompt: Input prompt
+            **kwargs: Generation parameters (temperature, max_tokens, stop, etc.)
+
+        Returns:
+            Generated text
+        """
+        if not self._loaded or not self._model:
+            raise RuntimeError("Model not loaded. Cannot generate.")
+
+        # Extract parameters
+        temperature = kwargs.get('temperature', 0.2)
+        max_tokens = kwargs.get('max_tokens', 4096)
+        stop = kwargs.get('stop', None)
+
+        # Generate using llama-cpp-python
+        response = self._model(
+            prompt,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            stop=stop,
+            echo=False
+        )
+
+        # Extract generated text
+        if isinstance(response, dict) and 'choices' in response:
+            return response['choices'][0]['text']
+
+        return str(response)
+
     def solve(self, task: AlgorithmTask) -> AlgorithmResult:
         """Solve algorithmic problem
 
