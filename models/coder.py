@@ -9,7 +9,7 @@ from pathlib import Path
 import json
 import re
 
-from models.base import GGUFModel
+from models.base import BaseModel
 
 
 @dataclass
@@ -36,7 +36,7 @@ class CodeResult:
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 
-class PrimaryCoder(GGUFModel):
+class PrimaryCoder(BaseModel):
     """Qwen2.5-Coder 7B wrapper for code generation and editing
 
     This model specializes in:

@@ -9,7 +9,7 @@ from pathlib import Path
 import json
 import re
 
-from models.base import GGUFModel
+from models.base import BaseModel
 
 
 @dataclass
@@ -37,7 +37,7 @@ class AlgorithmResult:
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 
-class AlgorithmSpecialist(GGUFModel):
+class AlgorithmSpecialist(BaseModel):
     """DeepSeek-Coder 6.7B wrapper for algorithmic problems
 
     This model specializes in:
