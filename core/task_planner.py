@@ -126,14 +126,16 @@ class TaskPlanner:
         Returns:
             List of TaskStep objects
         """
+        import re
+
         steps = []
 
         # Try to split by common delimiters
         if any(keyword in user_input.lower() for keyword in self.multi_step_keywords):
             # Split by multi-step keywords
             parts = self._split_by_keywords(user_input, self.multi_step_keywords)
-        elif '\n' in user_input and any(c.isdigit() for c in user_input):
-            # Split by numbered list
+        elif re.search(r'\d+[\.\)]', user_input):
+            # Split by numbered list (works for both inline and multi-line)
             parts = self._split_numbered_list(user_input)
         else:
             # Single step
@@ -184,10 +186,21 @@ class TaskPlanner:
         import re
 
         # Match patterns like "1.", "1)", "Step 1:", etc.
-        pattern = r'(?:^|\n)\s*(?:\d+[\.\)]\s*|Step\s+\d+:\s*)'
+        # Updated to work with inline numbered lists (e.g., "1. foo 2. bar 3. baz")
+        pattern = r'(?:^|\n|\s)\s*(\d+[\.\)]\s+|Step\s+\d+:\s*)'
 
+        # Split and filter
         parts = re.split(pattern, text)
-        return [p.strip() for p in parts if p.strip()]
+
+        # Filter out the captured number groups and empty strings
+        result = []
+        for part in parts:
+            part = part.strip()
+            # Skip if it's just a number marker (e.g., "1. ", "2) ")
+            if part and not re.match(r'^\d+[\.\)]\s*$', part):
+                result.append(part)
+
+        return result if result else [text]
 
     def _classify_step(self, step_id: int, description: str) -> TaskStep:
         """Classify a step based on its description
