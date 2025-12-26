@@ -1,6 +1,7 @@
 """Intent Router - Low-latency intent classification using small model"""
 import json
 import re
+import logging
 from dataclasses import dataclass, field
 from typing import Optional, Dict, Any
 from pathlib import Path
@@ -8,6 +9,9 @@ from pathlib import Path
 from models.base import BaseModel
 from models.lifecycle import GGUFModel
 from router.prompts import get_intent_prompt, REGEX_PATTERNS
+from utils.json_utils import extract_json
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -119,6 +123,12 @@ class IntentRouter(GGUFModel):
     def _parse_response(self, response: str, user_input: str) -> IntentResult:
         """Parse model JSON output into IntentResult
 
+        Uses robust JSON extraction that handles:
+        - Stray tokens before/after JSON
+        - YAML-style outputs
+        - Nested objects with proper bracket matching
+        - Malformed responses with graceful fallback
+
         Args:
             response: Raw model output
             user_input: Original user input (for fallback)
@@ -126,37 +136,85 @@ class IntentRouter(GGUFModel):
         Returns:
             Parsed IntentResult
         """
-        try:
-            # Try to extract JSON from response
-            # Look for JSON block in response
-            json_match = re.search(r'\{.*?\}', response, re.DOTALL)
-            if json_match:
-                json_str = json_match.group(0)
-                data = json.loads(json_str)
-            else:
-                # Try parsing entire response
-                data = json.loads(response)
+        # Use robust JSON extraction with required keys
+        required_keys = ['intent']  # confidence can be defaulted
+        data, extraction_method = extract_json(response, required_keys)
 
-            # Validate required fields
-            if 'intent' not in data or 'confidence' not in data:
-                raise ValueError("Missing required fields in response")
+        if data is not None:
+            # Log extraction method for debugging
+            logger.debug(f"JSON extracted via: {extraction_method}")
 
-            # Build IntentResult
+            # Normalize intent value (handle variations)
+            intent = self._normalize_intent(data.get('intent', 'simple_answer'))
+
+            # Extract confidence with default
+            try:
+                confidence = float(data.get('confidence', 0.5))
+                # Clamp to valid range
+                confidence = max(0.0, min(1.0, confidence))
+            except (ValueError, TypeError):
+                confidence = 0.5
+
+            # Determine escalation based on intent
+            escalate_to = data.get('escalate')
+            if escalate_to is None:
+                if intent == 'coding_task':
+                    escalate_to = 'coder'
+                elif intent == 'algorithm_task':
+                    escalate_to = 'algorithm'
+
             return IntentResult(
-                intent=data.get('intent', 'simple_answer'),
-                confidence=float(data.get('confidence', 0.5)),
+                intent=intent,
+                confidence=confidence,
                 params=data.get('params', {}),
-                escalate_to=data.get('escalate'),
+                escalate_to=escalate_to,
                 tool=data.get('tool'),
                 raw_response=response,
                 used_fallback=False
             )
 
-        except (json.JSONDecodeError, ValueError, KeyError) as e:
-            print(f"JSON parse error: {e}")
-            print(f"Response was: {response[:200]}")
-            # Fall back to regex
-            return self._fallback_regex(user_input)
+        # Log malformed response for debugging
+        logger.warning(f"Failed to extract JSON from response: {response[:200]}...")
+        logger.debug(f"Full response: {response}")
+
+        # Fall back to regex
+        return self._fallback_regex(user_input)
+
+    def _normalize_intent(self, intent: str) -> str:
+        """Normalize intent value to standard format
+
+        Handles variations like:
+        - "tool_call" / "tool call" / "toolcall"
+        - "coding_task" / "coding task" / "code"
+        - etc.
+
+        Args:
+            intent: Raw intent string
+
+        Returns:
+            Normalized intent string
+        """
+        intent = str(intent).lower().strip()
+
+        # Normalize tool_call variations
+        if intent in ('tool_call', 'tool call', 'toolcall', 'tool'):
+            return 'tool_call'
+
+        # Normalize coding_task variations
+        if intent in ('coding_task', 'coding task', 'codingtask', 'code', 'coding', 'code_generation'):
+            return 'coding_task'
+
+        # Normalize algorithm_task variations
+        if intent in ('algorithm_task', 'algorithm task', 'algorithmtask', 'algorithm', 'algo'):
+            return 'algorithm_task'
+
+        # Normalize simple_answer variations
+        if intent in ('simple_answer', 'simple answer', 'simpleanswer', 'answer', 'simple', 'question'):
+            return 'simple_answer'
+
+        # Default to simple_answer for unknown intents
+        logger.warning(f"Unknown intent '{intent}', defaulting to simple_answer")
+        return 'simple_answer'
 
     def _fallback_regex(self, user_input: str) -> IntentResult:
         """Fallback to regex-based classification

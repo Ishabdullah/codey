@@ -1,4 +1,5 @@
 """Orchestrator - Central coordination between router, models, and tools"""
+import logging
 from typing import Optional, Dict, Any, List
 
 from models.lifecycle import ModelLifecycleManager, ModelRole
@@ -7,6 +8,11 @@ from executor.tool_executor import ToolExecutor, ToolResult
 from models.coder import PrimaryCoder, CodingTask, CodeResult
 from models.algorithm_model import AlgorithmSpecialist, AlgorithmTask, AlgorithmResult
 from utils.thinking_display import ThinkingStep, thinking, step, substep, complete, error as display_error
+from utils.performance import (
+    start_request, end_request, time_operation, set_tokens, estimate_tokens
+)
+
+logger = logging.getLogger(__name__)
 
 
 class Orchestrator:
@@ -45,44 +51,59 @@ class Orchestrator:
         Returns:
             Response string
         """
-        # Ensure router is loaded
-        if self.router is None:
-            with thinking(ThinkingStep.LOADING_MODEL, "Intent Router"):
-                self._load_router()
+        # Start performance tracking
+        metrics = start_request()
 
-        # Classify intent
-        with thinking(ThinkingStep.CLASSIFYING):
-            try:
-                intent_result = self.router.classify(user_input, context)
-                substep(f"Intent: {intent_result.intent}")
-                if intent_result.used_fallback:
-                    substep("Using regex fallback")
-                substep(f"Confidence: {intent_result.confidence:.0%}")
-            except Exception as e:
-                display_error(f"Classification failed: {e}")
-                return f"Error classifying intent: {e}"
+        try:
+            # Ensure router is loaded
+            if self.router is None:
+                with thinking(ThinkingStep.LOADING_MODEL, "Intent Router"):
+                    with time_operation("router_load"):
+                        self._load_router()
 
-        # Route based on intent
-        step(ThinkingStep.ROUTING, intent_result.intent)
+            # Classify intent
+            with thinking(ThinkingStep.CLASSIFYING):
+                try:
+                    with time_operation("router_classify"):
+                        intent_result = self.router.classify(user_input, context)
+                    substep(f"Intent: {intent_result.intent}")
+                    if intent_result.used_fallback:
+                        substep("Using regex fallback")
+                    substep(f"Confidence: {intent_result.confidence:.0%}")
+                except Exception as e:
+                    display_error(f"Classification failed: {e}")
+                    return f"Error classifying intent: {e}"
 
-        if intent_result.is_tool_call():
-            return self._handle_tool_call(intent_result)
+            # Estimate input tokens
+            set_tokens(input_tokens=estimate_tokens(user_input))
 
-        elif intent_result.is_simple_answer():
-            return self._handle_simple_answer(intent_result, user_input)
+            # Route based on intent
+            step(ThinkingStep.ROUTING, intent_result.intent)
 
-        elif intent_result.is_coding_task():
-            return self._handle_coding_task(intent_result, user_input)
+            if intent_result.is_tool_call():
+                return self._handle_tool_call(intent_result)
 
-        elif intent_result.is_algorithm_task():
-            return self._handle_algorithm_task(intent_result, user_input)
+            elif intent_result.is_simple_answer():
+                return self._handle_simple_answer(intent_result, user_input)
 
-        else:
-            return self._handle_unknown(intent_result, user_input)
+            elif intent_result.is_coding_task():
+                return self._handle_coding_task(intent_result, user_input)
+
+            elif intent_result.is_algorithm_task():
+                return self._handle_algorithm_task(intent_result, user_input)
+
+            else:
+                return self._handle_unknown(intent_result, user_input)
+
+        finally:
+            # End performance tracking
+            request_metrics = end_request()
+            if request_metrics:
+                substep(f"Performance: {request_metrics.summary()}")
 
     def _load_router(self) -> None:
         """Load the router model (always-resident)"""
-        print("Loading intent router...")
+        logger.info("Loading intent router...")
         router_model = self.lifecycle.ensure_loaded(ModelRole.ROUTER)
 
         # Convert to IntentRouter instance
@@ -279,7 +300,8 @@ Answer:"""
         # Load primary coder model
         with thinking(ThinkingStep.LOADING_MODEL, "Qwen2.5-Coder 7B"):
             try:
-                coder_model = self.lifecycle.ensure_loaded(ModelRole.CODER)
+                with time_operation("coder_model_load"):
+                    coder_model = self.lifecycle.ensure_loaded(ModelRole.CODER)
             except Exception as e:
                 display_error(f"Failed to load coder model: {e}")
                 return f"✗ Failed to load coder model: {e}"
@@ -299,7 +321,14 @@ Answer:"""
         # Execute task
         with thinking(ThinkingStep.GENERATING_CODE):
             try:
-                result = coder.generate_code(task)
+                with time_operation("code_generation"):
+                    result = coder.generate_code(task)
+
+                # Track output tokens
+                if result.code:
+                    total_code = "".join(result.code.values())
+                    set_tokens(output_tokens=estimate_tokens(total_code))
+
             except Exception as e:
                 display_error(f"Code generation failed: {e}")
                 return f"✗ Code generation failed: {e}"
@@ -346,7 +375,9 @@ Answer:"""
             if filename:
                 target_files = [filename]
             else:
-                target_files = ['generated_code.py']
+                # Generate smart filename based on output format detection
+                filename, language = self._determine_output_format(user_input)
+                target_files = [filename]
 
         # Get existing code if editing
         existing_code = None
@@ -364,6 +395,118 @@ Answer:"""
             language=language,
             constraints=[]
         )
+
+    def _determine_output_format(self, user_input: str) -> tuple:
+        """Determine output file format based on user input
+
+        Default is Python. Only produce HTML/JS/etc if explicitly requested.
+
+        Args:
+            user_input: User's request
+
+        Returns:
+            Tuple of (filename, language)
+        """
+        import re
+        user_lower = user_input.lower()
+
+        # Extract a descriptive name from the request
+        base_name = self._extract_base_name(user_input)
+
+        # Check for explicit web/frontend keywords - must be explicit
+        html_keywords = [
+            'html', 'webpage', 'web page', 'website', 'web site',
+            'html page', 'html file', 'html document'
+        ]
+        js_keywords = [
+            'javascript', 'js file', 'node.js', 'nodejs',
+            'react', 'vue', 'angular', 'frontend'
+        ]
+        ts_keywords = ['typescript', 'ts file', '.ts']
+        css_keywords = ['css file', 'stylesheet', 'css stylesheet']
+        shell_keywords = ['bash', 'shell script', 'sh file', '.sh']
+        go_keywords = ['golang', 'go file', '.go', 'in go']
+        rust_keywords = ['rust', '.rs', 'in rust']
+        java_keywords = ['java', '.java', 'in java']
+        cpp_keywords = ['c++', 'cpp', '.cpp', 'in c++']
+
+        # Check explicit language requests (in order of specificity)
+        if any(kw in user_lower for kw in html_keywords):
+            return (f'{base_name}.html', 'html')
+
+        if any(kw in user_lower for kw in ts_keywords):
+            return (f'{base_name}.ts', 'typescript')
+
+        if any(kw in user_lower for kw in js_keywords):
+            return (f'{base_name}.js', 'javascript')
+
+        if any(kw in user_lower for kw in css_keywords):
+            return (f'{base_name}.css', 'css')
+
+        if any(kw in user_lower for kw in shell_keywords):
+            return (f'{base_name}.sh', 'bash')
+
+        if any(kw in user_lower for kw in go_keywords):
+            return (f'{base_name}.go', 'go')
+
+        if any(kw in user_lower for kw in rust_keywords):
+            return (f'{base_name}.rs', 'rust')
+
+        if any(kw in user_lower for kw in java_keywords):
+            return (f'{base_name}.java', 'java')
+
+        if any(kw in user_lower for kw in cpp_keywords):
+            return (f'{base_name}.cpp', 'cpp')
+
+        # Default to Python - the safe default
+        return (f'{base_name}.py', 'python')
+
+    def _extract_base_name(self, user_input: str) -> str:
+        """Extract a descriptive base filename from user input
+
+        Args:
+            user_input: User's request
+
+        Returns:
+            Base filename (without extension)
+        """
+        import re
+        user_lower = user_input.lower()
+
+        # Known key nouns to prioritize - check these first
+        key_nouns = [
+            'calculator', 'game', 'server', 'client', 'api', 'database', 'db',
+            'parser', 'compiler', 'lexer', 'interpreter', 'scheduler',
+            'handler', 'manager', 'controller', 'service', 'util', 'utils',
+            'helper', 'test', 'config', 'settings', 'main', 'index',
+            'todo', 'chat', 'login', 'auth', 'user', 'admin', 'dashboard',
+            'timer', 'counter', 'converter', 'validator', 'generator'
+        ]
+        for noun in key_nouns:
+            if noun in user_lower:
+                return noun
+
+        # Try to find descriptive noun for the file
+        # Pattern: "create a/an [adjective]? X" or "write a/an X"
+        # Skip articles and common adjectives
+        skip_words = {
+            'a', 'an', 'the', 'some', 'simple', 'basic', 'small', 'new',
+            'file', 'code', 'script', 'program', 'app', 'application',
+            'function', 'class', 'module', 'that', 'which', 'for', 'to'
+        }
+
+        # Find words after action verbs
+        pattern = r'(?:create|write|make|build|generate|implement)\s+(.+?)(?:\s+(?:in|for|that|which|with)|$)'
+        match = re.search(pattern, user_lower)
+        if match:
+            words = match.group(1).split()
+            for word in words:
+                word = re.sub(r'[^a-z]', '', word)  # Clean word
+                if word and word not in skip_words and len(word) > 2:
+                    return word
+
+        # Default to generic name
+        return 'generated_code'
 
     def _extract_filename_from_input(self, user_input: str) -> Optional[str]:
         """Extract filename from user input
@@ -478,11 +621,11 @@ Answer:"""
             Algorithm specialist result
         """
         # Unload coder to free memory
-        print("Unloading coder model to free memory...")
+        logger.info("Unloading coder model to free memory...")
         self.lifecycle.unload_model(ModelRole.CODER)
 
         # Load algorithm specialist
-        print("Loading DeepSeek-Coder 6.7B (Algorithm Specialist)...")
+        logger.info("Loading DeepSeek-Coder 6.7B (Algorithm Specialist)...")
         try:
             algo_model = self.lifecycle.ensure_loaded(ModelRole.ALGORITHM)
         except Exception as e:
@@ -520,7 +663,7 @@ Answer:"""
         Returns:
             Algorithm result
         """
-        print("Loading DeepSeek-Coder 6.7B (Algorithm Specialist)...")
+        logger.info("Loading DeepSeek-Coder 6.7B (Algorithm Specialist)...")
 
         # Load algorithm specialist
         try:

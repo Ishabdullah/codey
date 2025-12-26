@@ -4,7 +4,7 @@
 
 Codey is designed for **privacy**, **speed**, and **mobile hardware** (Android/Termux), with intelligent model routing and memory management.
 
-**Status:** ✅ **Phases 1-5 Complete** | Production-Ready | All Tests Passing
+**Status:** ✅ **Phases 1-5 Complete + Refactoring** | Production-Ready | All Tests Passing
 
 ---
 
@@ -124,6 +124,15 @@ Codey is designed for **privacy**, **speed**, and **mobile hardware** (Android/T
 - **Automatic fallback** - Falls back to full file when needed
 - **Unified diff format** - Clear visualization of changes
 
+### Refactoring: Robustness & Performance ✅
+
+- **Robust JSON Extraction** - Handles noisy LLM outputs, YAML-style responses, and malformed JSON
+- **Smart Output Format Detection** - Default to Python unless explicitly requesting HTML/JS/etc
+- **Prompt Hygiene** - Clean separation between router and coder prompts
+- **Performance Tracking** - Request timing, token counting, and metrics collection
+- **Structured Logging** - Centralized logging with file rotation support
+- **Smoke Tests** - 31 fast tests for core functionality verification
+
 ---
 
 ## 🚀 Quick Start
@@ -206,23 +215,27 @@ python3 engine_v3.py
 ### Run All Tests
 
 ```bash
-# Phase 1 tests
+# Quick smoke tests (31 tests, no model loading)
+python3 test_smoke.py
+
+# JSON utilities tests (39 tests)
+python3 test_json_utils.py
+
+# Output format detection tests (24 tests)
+python3 test_output_format.py
+
+# Phase integration tests (require models)
 python3 test_phase1.py
-
-# Phase 2 tests
 python3 test_phase2.py
-
-# Phase 3 tests
 python3 test_phase3.py
-
-# Phase 4 tests
 python3 test_phase4.py
-
-# Phase 5 tests
 python3 test_phase5.py
 ```
 
 **Current Status:**
+- Smoke tests: ✅ 31/31 passing
+- JSON utils: ✅ 39/39 passing
+- Output format: ✅ 24/24 passing
 - Phase 1: ✅ All tests passing
 - Phase 2: ✅ All tests passing
 - Phase 3: ✅ 5/6 tests passing (algorithm timeout expected on slow hardware)
@@ -255,15 +268,23 @@ codey/
 │   └── algorithm_model.py       # Algorithm specialist (Phase 3)
 │
 ├── router/                      # Intent routing
-│   └── intent_router.py         # FunctionGemma router (Phase 2)
+│   ├── intent_router.py         # FunctionGemma router (Phase 2)
+│   └── prompts.py               # Prompt templates and patterns
 │
 ├── executor/                    # Tool execution
 │   └── tool_executor.py         # Direct tool execution (Phase 2)
 │
 ├── utils/                       # Utilities
-│   └── config.py                # Configuration loader
+│   ├── config.py                # Configuration loader
+│   ├── json_utils.py            # Robust JSON extraction
+│   ├── performance.py           # Performance tracking
+│   ├── logging_config.py        # Structured logging
+│   └── thinking_display.py      # LLM process visualization
 │
 ├── test_phase*.py               # Integration tests
+├── test_smoke.py                # Smoke tests (31 fast tests)
+├── test_json_utils.py           # JSON utilities tests (39 tests)
+├── test_output_format.py        # Output format detection tests
 ├── PHASE*_COMPLETE.md           # Phase documentation
 ├── CPU_PERFORMANCE_FIX.md       # Performance optimization guide
 └── README.md                    # This file
@@ -422,9 +443,9 @@ This is proprietary software. See LICENSE file for details.
 
 ## 📊 Statistics
 
-**Total Lines of Code:** ~5,400+
-**Components:** 13 modules
-**Test Coverage:** 5 test suites, 30+ integration tests
+**Total Lines of Code:** ~6,500+
+**Components:** 17 modules
+**Test Coverage:** 8 test suites, 100+ tests (smoke, unit, integration)
 **Development Time:** December 2025
 **Platform:** Mobile-first (Android/Termux), Linux compatible
 

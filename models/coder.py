@@ -3,6 +3,7 @@
 This module provides a specialized wrapper for the Qwen2.5-Coder 7B model,
 designed for code generation, editing, refactoring, and review tasks.
 """
+import logging
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional, Any
 from pathlib import Path
@@ -10,6 +11,8 @@ import json
 import re
 
 from models.base import BaseModel
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -53,15 +56,24 @@ class PrimaryCoder(BaseModel):
     - Mathematical/computational problems
     """
 
-    SYSTEM_PROMPT = """You are an expert coding assistant. Generate clean, working code.
+    SYSTEM_PROMPT = """You are an expert code generator. Your ONLY job is to write code.
 
-Rules:
-- Write complete, functional code
-- Use proper syntax and best practices
-- Add brief comments for complex logic
-- Output code in markdown code blocks using ```python or ```language
+OUTPUT FORMAT:
+- Output ONLY code in markdown code blocks using ```language
+- Do NOT include explanations, greetings, or conversation
+- Do NOT say "Here is the code" or similar phrases
+- Start directly with the code block
 
-Be concise and direct."""
+CODE QUALITY:
+- Write complete, functional, runnable code
+- Use proper syntax and language-specific best practices
+- Add brief inline comments for complex logic only
+- Use descriptive variable and function names
+
+RESTRICTIONS:
+- Output code ONLY - no prose, no explanations
+- Do not ask clarifying questions
+- Do not suggest alternatives unless asked"""
 
     # Keywords that trigger algorithm specialist escalation
     ALGORITHM_KEYWORDS = [
@@ -112,13 +124,12 @@ Be concise and direct."""
         stop = kwargs.get('stop', None)
 
         # Debug logging
-        print(f"\n[DEBUG] Starting generation...")
-        print(f"[DEBUG] Temperature: {temperature}, Max tokens: {max_tokens}")
-        print(f"[DEBUG] Stop sequences: {stop}")
-        print(f"[DEBUG] Prompt preview (first 500 chars):")
-        print(f"{prompt[:500]}")
-        print(f"[DEBUG] Prompt length: {len(prompt)} characters")
-        print(f"[DEBUG] Calling model inference...")
+        logger.debug("Starting generation...")
+        logger.debug(f"Temperature: {temperature}, Max tokens: {max_tokens}")
+        logger.debug(f"Stop sequences: {stop}")
+        logger.debug(f"Prompt preview (first 500 chars): {prompt[:500]}")
+        logger.debug(f"Prompt length: {len(prompt)} characters")
+        logger.debug("Calling model inference...")
 
         # Generate using llama-cpp-python with timeout protection
         import time
@@ -151,17 +162,17 @@ Be concise and direct."""
                     echo=False
                 )
         except TimeoutError as e:
-            print(f"[ERROR] {e}")
+            logger.error(str(e))
             raise RuntimeError(f"Generation timeout after 120 seconds - check CPU performance")
 
         elapsed = time.time() - start_time
-        print(f"[DEBUG] Generation completed in {elapsed:.2f} seconds")
+        logger.debug(f"Generation completed in {elapsed:.2f} seconds")
 
         # Extract generated text
         if isinstance(response, dict) and 'choices' in response:
             result = response['choices'][0]['text']
-            print(f"[DEBUG] Generated {len(result)} characters")
-            print(f"[DEBUG] Response preview (first 200 chars): {result[:200]}")
+            logger.debug(f"Generated {len(result)} characters")
+            logger.debug(f"Response preview (first 200 chars): {result[:200]}")
             return result
 
         return str(response)
@@ -194,8 +205,7 @@ Be concise and direct."""
 
         try:
             # Generate code with proper stop sequences
-            # Use common markdown and code delimiters
-            print(f"[DEBUG] Generating code for task type: {task.task_type}")
+            logger.debug(f"Generating code for task type: {task.task_type}")
 
             response = self.generate(
                 prompt,
@@ -205,15 +215,13 @@ Be concise and direct."""
             )
 
             # Parse response
-            print(f"[DEBUG] Parsing response...")
+            logger.debug("Parsing response...")
             result = self._parse_code_response(response, task)
-            print(f"[DEBUG] Parse result: success={result.success}, needs_algo={result.needs_algorithm_specialist}")
+            logger.debug(f"Parse result: success={result.success}, needs_algo={result.needs_algorithm_specialist}")
             return result
 
         except Exception as e:
-            print(f"[ERROR] Code generation failed: {str(e)}")
-            import traceback
-            traceback.print_exc()
+            logger.error(f"Code generation failed: {str(e)}", exc_info=True)
             return CodeResult(
                 success=False,
                 error=f"Code generation failed: {str(e)}"
@@ -345,6 +353,42 @@ Review:"""
 
         return False
 
+    def _sanitize_instructions(self, instructions: str) -> str:
+        """Sanitize user instructions to remove router artifacts
+
+        Removes any classification metadata or router-specific content
+        that might have leaked through.
+
+        Args:
+            instructions: Raw instructions string
+
+        Returns:
+            Cleaned instructions
+        """
+        import re
+
+        # Remove any JSON-like classification artifacts
+        # e.g., {"intent": "coding_task", ...}
+        cleaned = re.sub(r'\{["\']?intent["\']?\s*:', '', instructions)
+        cleaned = re.sub(r'\{["\']?confidence["\']?\s*:', '', cleaned)
+
+        # Remove router-specific phrases
+        router_phrases = [
+            r'intent:\s*\w+',
+            r'confidence:\s*[\d.]+',
+            r'escalate:\s*\w+',
+            r'tool:\s*\w+',
+            r'classification:',
+            r'routing to:',
+        ]
+        for phrase in router_phrases:
+            cleaned = re.sub(phrase, '', cleaned, flags=re.IGNORECASE)
+
+        # Clean up extra whitespace
+        cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+
+        return cleaned
+
     def _build_coding_prompt(self, task: CodingTask) -> str:
         """Build prompt for code generation
 
@@ -354,14 +398,17 @@ Review:"""
         Returns:
             Formatted prompt string
         """
+        # Sanitize instructions to remove any router artifacts
+        instructions = self._sanitize_instructions(task.instructions)
+
         # Ultra-simplified prompt format
         if task.task_type == "create":
             # Very simple and direct prompt
-            prompt = f"Write {task.language} code for: {task.instructions}\n\nCode:"
+            prompt = f"Write {task.language} code for: {instructions}\n\nCode:"
             return prompt
 
         elif task.task_type == "edit":
-            prompt_parts = [f"Edit {task.language} code: {task.instructions}\n\n"]
+            prompt_parts = [f"Edit {task.language} code: {instructions}\n\n"]
 
             if task.existing_code:
                 for filename, content in task.existing_code.items():
@@ -371,7 +418,7 @@ Review:"""
             return "".join(prompt_parts)
 
         elif task.task_type == "refactor":
-            prompt_parts = [f"Refactor {task.language} code: {task.instructions}\n\n"]
+            prompt_parts = [f"Refactor {task.language} code: {instructions}\n\n"]
 
             if task.existing_code:
                 for filename, content in task.existing_code.items():
@@ -381,7 +428,7 @@ Review:"""
             return "".join(prompt_parts)
 
         elif task.task_type == "fix":
-            prompt_parts = [f"Fix this {task.language} code: {task.instructions}\n\n"]
+            prompt_parts = [f"Fix this {task.language} code: {instructions}\n\n"]
 
             if task.existing_code:
                 for filename, content in task.existing_code.items():
@@ -391,7 +438,7 @@ Review:"""
             return "".join(prompt_parts)
 
         # Fallback
-        return f"Write {task.language} code: {task.instructions}\n\n```{task.language}\n"
+        return f"Write {task.language} code: {instructions}\n\n```{task.language}\n"
 
     def _parse_code_response(self, response: str, task: CodingTask) -> CodeResult:
         """Parse model response into CodeResult
@@ -574,7 +621,7 @@ Review:"""
         prompt = diff_gen.generate_edit_prompt(filename, original_code, task.instructions)
 
         try:
-            print(f"[DEBUG] Generating diff edits for: {filename}")
+            logger.debug(f"Generating diff edits for: {filename}")
 
             response = self.generate(
                 prompt,
@@ -584,17 +631,17 @@ Review:"""
             )
 
             # Parse edit blocks
-            print(f"[DEBUG] Parsing edit blocks from response...")
+            logger.debug("Parsing edit blocks from response...")
             edit_blocks = diff_gen.parse_edit_blocks(response)
 
             if not edit_blocks:
-                print(f"[DEBUG] No edit blocks found, falling back to full file generation")
+                logger.debug("No edit blocks found, falling back to full file generation")
                 return self.generate_code(task)
 
             # Validate edits
             errors = diff_gen.validate_edits(original_code, edit_blocks)
             if errors:
-                print(f"[WARNING] Edit validation failed: {errors}")
+                logger.warning(f"Edit validation failed: {errors}")
                 return CodeResult(
                     success=False,
                     error=f"Generated edits failed validation:\n" + "\n".join(errors)
@@ -614,6 +661,6 @@ Review:"""
             )
 
         except Exception as e:
-            print(f"[ERROR] Diff generation failed: {str(e)}")
-            print(f"[DEBUG] Falling back to full file generation")
+            logger.error(f"Diff generation failed: {str(e)}")
+            logger.debug("Falling back to full file generation")
             return self.generate_code(task)
