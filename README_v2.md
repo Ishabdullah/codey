@@ -4,46 +4,54 @@
 > **Architecture:** Local Multi-Model Orchestration
 > **Focus:** Privacy, Zero-Cloud Dependency, Efficiency
 
-Codey is a command-line AI software engineer designed to run **entirely on your local machine**. Unlike cloud-based assistants, Codey keeps your code private and works offline. It is specifically architected for standard consumer hardware (CPUs), prioritizing system stability and memory management over raw speed.
+Codey is a command-line AI software engineer designed to run **entirely on your local machine**. Unlike cloud-based assistants that rely on massive server farms, Codey runs on standard consumer hardware. It maintains complete data privacy by ensuring no code or telemetry ever leaves your machine.
 
----
+## Design Philosophy
 
-## ⚡ Capability Reality Check
+Codey is built upon three core principles regarding local AI execution:
 
-### What Codey DOES
-*   **Runs Locally:** No API keys, no monthly fees, no data egress.
-*   **Edits Code:** Can read, analyze, and modify files in your workspace.
-*   **Plans Tasks:** Breaks down complex instructions ("create a react app") into steps.
+1.  **CPU-First by Design:** Codey is not a GPU-native application that merely tolerates CPUs. It is engineered specifically for the latency and bandwidth constraints of system RAM and CPU inference.
+2.  **Stability Over Speed:** On local hardware, aggressive resource usage leads to system instability. Codey strictly budgets memory and prioritizes system responsiveness over raw token generation speed.
+3.  **Iterative Correctness:** Codey favors iterative improvement over one-shot generation. Given the constraints of 7B parameter models, reliability is achieved by breaking complex tasks into smaller, verifiable steps rather than attempting complex architecture in a single pass.
+
+## Capability Reality Check
+
+### What Codey Does
+*   **Runs Locally:** Operates without API keys, monthly fees, or data egress.
+*   **Edits Code:** Reads, analyzes, and modifies files directly in the workspace.
+*   **Plans Tasks:** Decomposes complex instructions (e.g., "create a react app") into executable steps.
 *   **Manages Git:** Handles commits, status checks, and history.
-*   **Optimizes Resources:** strictly manages RAM usage to prevent system slowdowns.
+*   **Optimizes Resources:** Enforces strict RAM budgeting to prevent operating system slowdowns.
 
-### What Codey IS NOT
-*   **Instant:** On a CPU, "thinking" takes time. Generating a complex function might take 30-60 seconds.
-*   **A Supercomputer:** It uses 7B parameter models. It is competent at junior-to-mid-level tasks but will not architect a microservices backend in one shot.
-*   **Magic:** It relies on clear instructions and context.
+### What Codey Is Not
+*   **Instant:** On a CPU, inference takes time. Generating a complex function requires patience (often 30-60 seconds).
+*   **A Supercomputer:** It utilizes 7B parameter models. It is competent at junior-to-mid-level tasks but will not architect microservices backends in a single prompt.
+*   **Magic:** It relies on clear instructions, established context, and iterative refinement.
 
----
+### Self-Awareness Boundaries
+Codey operates within strict confidence and capability limits. It is designed to:
+*   Explicitly report when a task exceeds its context window or logical capabilities.
+*   Treat guessing and hallucination as critical failures, not features.
+*   Request narrower scope or clarification rather than attempting low-confidence generation.
 
-## 🏗 System Architecture
+## System Architecture
 
-Codey uses a **Split-Brain Architecture** to balance speed and intelligence:
+Codey uses a Split-Brain Architecture to balance latency and intelligence:
 
 1.  **The Reflex Layer (Router):**
-    *   **Model:** FunctionGemma 270M (Tiny, Fast)
-    *   **Role:** Instantly decides if your request is a simple tool command (`git status`), a question, or a coding task.
-    *   **Latency:** < 1 second.
+    *   **Model:** FunctionGemma 270M
+    *   **Role:** Instantly classifies requests as simple tool commands, questions, or coding tasks.
+    *   **Latency:** Sub-second.
 
 2.  **The Deep Layer (Coder):**
-    *   **Model:** Qwen2.5-Coder 7B (State-of-the-art for size)
+    *   **Model:** Qwen2.5-Coder 7B
     *   **Role:** Handles complex code generation, refactoring, and logic.
-    *   **Latency:** Loaded on-demand. 5-30 seconds to generate.
+    *   **Latency:** Loaded on-demand (5-30 seconds).
 
 3.  **Lifecycle Manager:**
-    *   Actively manages RAM. If you have a 6GB limit, Codey ensures it unloads idle models before loading new ones to prevent crashing your OS.
+    *   Actively manages RAM. If a memory limit is set (e.g., 6GB), Codey ensures idle models are unloaded before new ones are initialized to maintain system stability.
 
----
-
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 *   **OS:** Linux / macOS / WSL2
@@ -63,12 +71,10 @@ pip install -r requirements.txt
 
 ### Configuration
 Codey auto-generates a `config.json` on first run. Key settings to tune:
-*   `memory_budget_mb`: Set this to ~70% of your available RAM.
-*   `n_threads`: Set to number of physical CPU cores.
+*   `memory_budget_mb`: Set this to approximately 70% of available RAM.
+*   `n_threads`: Set to the number of physical CPU cores.
 
----
-
-## 🚦 Usage
+## Usage
 
 Start the engine:
 ```bash
@@ -100,24 +106,20 @@ Codey decomposes these into a sequence of actions.
 > 1. git pull 2. run tests 3. if pass, git push
 ```
 
----
+## Performance Tuning
 
-## 🔬 Performance Tuning
+Running LLMs on CPU requires understanding the bottlenecks:
 
-Running LLMs on CPU requires patience. Here is where the time goes:
-
-| Action | Time Cost | Why? |
-|os|---|---|
+| Action | Time Cost | Explanation |
+|---|---|---|
 | **Routing** | < 1s | Small model, resident in memory. |
-| **Model Loading** | 2-10s | Reading 5GB from disk into RAM. Happens when switching tasks. |
+| **Model Loading** | 2-10s | Reading GBs from disk into RAM. Occurs when switching tasks. |
 | **Generation** | 2-10 tok/s | Matrix multiplication on CPU is bandwidth-limited. |
 
-**Pro Tip:** Group your tasks. Do all your coding at once. Do all your git operations at once. This avoids "thrashing" (repeatedly loading/unloading models).
+**Recommendation:** Group similar tasks. Perform all coding tasks in sequence, then all git operations. This prevents "thrashing" (repeatedly loading/unloading models).
 
----
+## Future Roadmap
 
-## 🛠 Future Roadmap
-
-*   **Streaming Output:** To make generation feel faster.
+*   **Streaming Output:** To improve perceived latency during generation.
 *   **Unified Model Strategy:** Merging Algorithm/Coder roles to reduce loading times.
-*   **Smart Context:** Better handling of long conversation history.
+*   **Smart Context:** Improved handling of long conversation history and context windows.
