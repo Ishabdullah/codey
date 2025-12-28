@@ -109,8 +109,17 @@ class IntentRouter(GGUFModel):
             # Parse JSON response
             intent_result = self._parse_response(response, user_input)
 
+            # Normalize tool name
+            if intent_result.tool:
+                intent_result.tool = self._normalize_tool(intent_result.tool)
+
+            # Validation: If tool_call has no tool, it's invalid -> fallback
+            if intent_result.is_tool_call() and not intent_result.tool:
+                logger.warning("Model predicted tool_call but missing tool. Falling back to regex.")
+                intent_result = self._fallback_regex(user_input)
+
             # If confidence is too low, try fallback
-            if intent_result.confidence < 0.5:
+            elif intent_result.confidence < 0.5:
                 intent_result = self._fallback_regex(user_input)
 
             return intent_result
@@ -180,6 +189,28 @@ class IntentRouter(GGUFModel):
         # Fall back to regex
         return self._fallback_regex(user_input)
 
+    def _normalize_tool(self, tool: str) -> Optional[str]:
+        """Normalize tool name to standard format
+
+        Args:
+            tool: Raw tool name
+
+        Returns:
+            Normalized tool name or None if invalid
+        """
+        tool = str(tool).lower().strip()
+
+        if tool in ('git', 'github'):
+            return 'git'
+        
+        if tool in ('shell', 'bash', 'terminal', 'cmd', 'command'):
+            return 'shell'
+        
+        if tool in ('file', 'read', 'write', 'filesystem', 'fs'):
+            return 'file'
+            
+        return tool
+
     def _normalize_intent(self, intent: str) -> str:
         """Normalize intent value to standard format
 
@@ -201,7 +232,7 @@ class IntentRouter(GGUFModel):
             return 'tool_call'
 
         # Normalize coding_task variations
-        if intent in ('coding_task', 'coding task', 'codingtask', 'code', 'coding', 'code_generation'):
+        if intent in ('coding_task', 'coding task', 'codingtask', 'code', 'coding', 'code_generation', 'code_task'):
             return 'coding_task'
 
         # Normalize algorithm_task variations
@@ -209,7 +240,8 @@ class IntentRouter(GGUFModel):
             return 'algorithm_task'
 
         # Normalize simple_answer variations
-        if intent in ('simple_answer', 'simple answer', 'simpleanswer', 'answer', 'simple', 'question'):
+        if intent in ('simple_answer', 'simple answer', 'simpleanswer', 'answer', 'simple', 'question', 'error'):
+            # Note: 'error' intent from model usually means it didn't understand, so we treat as simple Q&A
             return 'simple_answer'
 
         # Default to simple_answer for unknown intents

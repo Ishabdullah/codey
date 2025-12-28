@@ -51,6 +51,14 @@ Codey uses a Split-Brain Architecture to balance latency and intelligence:
 3.  **Lifecycle Manager:**
     *   Actively manages RAM. If a memory limit is set (e.g., 6GB), Codey ensures idle models are unloaded before new ones are initialized to maintain system stability.
 
+## Tool Registry & Safety
+
+Codey employs a strict tool execution policy to prevent hallucinated actions:
+
+*   **Registry:** Only explicitly defined tools (`git`, `shell`, `file`) are executable.
+*   **Safety Fallback:** If the Intent Router predicts a tool that doesn't exist (e.g., "tool: fix_code"), the system automatically intercepts this error and redirects the request to the general coding or Q&A path.
+*   **Normalization:** Aliases are automatically mapped (e.g., "read" → "file", "terminal" → "shell") to handle natural language variations.
+
 ## Getting Started
 
 ### Prerequisites

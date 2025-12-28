@@ -65,11 +65,12 @@ REGEX_PATTERNS = {
         r"(create|write|generate|make)\s+.*\.(py|js|java|cpp|c|go|rs)",
         r"(edit|modify|update|change|fix)\s+.*\.(py|js|java|cpp|c|go|rs)",
         r"(refactor|improve|optimize)\s+",
-        r"(add|implement|build)\s+(function|class|method|feature)",
+        r"(add|implement|build|create|write|generate)\s+(a\s+)?(python|js|java|cpp|c|go|rs)?\s*(function|class|method|feature|script|app|program)",
         r"(write|create|make).*code",
         r"code\s+(that|for|to)\s+",
         r"(create|write).*calculator",
         r"prints?\s+hello\s+world",
+        r"fibonacci",
     ],
 
     "algorithm_task": [

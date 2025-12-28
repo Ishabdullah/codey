@@ -205,6 +205,13 @@ def main():
                 if not user_input:
                     continue
 
+                # Filter out llama.cpp log noise that might get captured
+                if (user_input.startswith("llama_") or 
+                    user_input.startswith("ggml_") or
+                    user_input.startswith("main:") or 
+                    "n_ctx" in user_input):
+                    continue
+
                 if user_input.lower() in ['exit', 'quit']:
                     break
 
