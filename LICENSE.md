@@ -14,7 +14,7 @@ This software ("Codey") is made available for use under the following terms:
 
 ## 2. Commercial Licensing
 
-The exclusive right to sell, license, or commercially exploit Codey is reserved solely by the Copyright Holder, Ish Abdullah.
+The exclusive right to sell, license, or commercially exploit Codey is reserved solely by the Copyright Holder, Ismail Abdullah.
 
 If you wish to use Codey for commercial purposes, please contact the author to obtain a commercial license.
 
