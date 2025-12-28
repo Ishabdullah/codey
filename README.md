@@ -1,6 +1,6 @@
 # Codey: The Local, CPU-Optimized AI Engineer
 
-> **Version:** 3.3 (Phase 6.1: Code Extraction Fixes + Quality Improvements)
+> **Version:** 3.4 (Phase 6.2: Input Handling, Model Caching & Extraction Fixes)
 > **Architecture:** Local Multi-Model Orchestration with Chunked Execution
 > **Focus:** Privacy, Zero-Cloud Dependency, CPU-Optimized Generation, Robust Code Extraction
 
@@ -340,6 +340,100 @@ Multiple directories created with single permission prompt:
 
 ---
 
+## Phase 6.2: Input Handling, Model Caching & Extraction Fixes
+
+Phase 6.2 addresses critical UX issues discovered during extended testing:
+
+### Multi-Line Input Handling (`engine_v3.py`)
+Properly handles pasted multi-line prompts:
+- Uses `select.select()` to detect buffered stdin
+- Collects all pending lines within 50ms after initial input
+- Prevents multi-line prompts from being split into separate tasks
+
+**Before (broken):**
+```text
+> Create a Flask app with:
+  Backend: REST API
+  Frontend: HTML/JS
+
+# Engine processes "Create a Flask app with:" as one task
+# Then processes "Backend: REST API" as a SECOND task
+# User sees duplicate/confused output
+```
+
+**After (fixed):**
+```text
+> Create a Flask app with:
+  Backend: REST API
+  Frontend: HTML/JS
+
+# Engine collects all lines as single prompt
+# Processes complete request correctly
+```
+
+### Smart Model Loading Display (`orchestrator.py`)
+Model loading messages now only appear when actually loading:
+- Checks `lifecycle.is_loaded()` before showing "Loading model..."
+- Eliminates confusing "Loading" messages when model is already cached
+- Applies to Router, Coder, and Algorithm models
+
+**Before:**
+```text
+> write hello world
+📦 Loading model: Qwen2.5-Coder 7B... ✓  # Shows every time!
+> write goodbye world
+📦 Loading model: Qwen2.5-Coder 7B... ✓  # Model was already loaded!
+```
+
+**After:**
+```text
+> write hello world
+📦 Loading model: Qwen2.5-Coder 7B... ✓  # First load - shows message
+> write goodbye world
+⚙️ Generating code... ✓                   # Already loaded - no message
+```
+
+### Enhanced Code Extraction (`core/code_extractor.py`)
+Improved garbage handling in LLM output:
+
+**Garbage Prefix Patterns:**
+- `leted`, `eted`, `pleted` (fragments of "completed")
+- `// static/js/app.js` (filename comments)
+- `# static/css/style.css` (path comments)
+- `templates/`, `static/` (path prefixes)
+
+**End-of-File Garbage Trimming:**
+- Removes `File: something.py` at end
+- Removes stray ` ``` ` code fences
+- Removes `Code: filename.js` markers
+- Removes step markers and horizontal rules
+
+**Content Salvage:**
+- CSS: Extracts valid CSS rules from HTML-mixed responses
+- JS: Extracts valid JavaScript from corrupted output
+- Auto-triggers when wrong content type detected
+
+**Example:**
+```text
+Input (corrupted):
+  leted
+
+  // static/js/app.js
+  document.addEventListener('DOMContentLoaded', () => {
+      console.log('Hello');
+  });
+
+  File: code_block_0.py
+  ```javascript
+
+Output (cleaned):
+  document.addEventListener('DOMContentLoaded', () => {
+      console.log('Hello');
+  });
+```
+
+---
+
 ## Performance Tuning
 
 Running LLMs on CPU requires understanding the bottlenecks:
@@ -420,8 +514,14 @@ Codey evolves by focusing on achievable milestones that respect local hardware c
     *   **Template-Based Generation:** requirements.txt and README.md use templates instead of LLM.
     *   **Token Budget Enforcement:** Max tokens passed from chunk plan to coder for strict budget control.
     *   **Batch Directory Permissions:** Multiple directories created with single permission prompt.
+*   **Phase 6.2: Input Handling & Model Caching (v3.4):**
+    *   **Multi-Line Input Handling:** Uses `select.select()` to collect pasted multi-line prompts as single request.
+    *   **Smart Model Loading Display:** Only shows "Loading model..." when actually loading from disk, not when cached.
+    *   **Enhanced Garbage Prefix Handling:** Cleans `leted`, `eted`, `pleted` fragments and filename comments.
+    *   **End-of-File Garbage Trimming:** Removes stray code fences, `File:` markers, and step markers from end of output.
+    *   **CSS/JS Content Salvage:** Extracts valid CSS/JS from HTML-mixed or corrupted LLM responses.
 
-### 🟡 Near Term (v3.4 - v3.5)
+### 🟡 Near Term (v3.5 - v3.6)
 *   **Unified Model Strategy:** Merge Algorithm/Coder roles into a single 7B model to eliminate reloading times.
 *   **Smart Context:** Implement a sliding window or summary mechanism for long conversations.
 

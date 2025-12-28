@@ -133,6 +133,16 @@ class CodeExtractor:
 
     def _extract_direct(self, response: str, file_ext: str) -> Optional[str]:
         """Extract code directly without code blocks"""
+        # First, check for wrong type indicators - if found, try salvage
+        wrong_indicators = self.WRONG_TYPE_INDICATORS.get(file_ext, [])
+        for indicator in wrong_indicators:
+            if indicator.startswith('^'):
+                if re.search(indicator, response, re.MULTILINE):
+                    return self._try_salvage(response, file_ext)
+            else:
+                if indicator in response:
+                    return self._try_salvage(response, file_ext)
+
         # Check if response looks like the target file type
         patterns = self.FILE_TYPE_PATTERNS.get(file_ext, [])
 
@@ -144,7 +154,9 @@ class CodeExtractor:
 
     # Garbage patterns that leak from LLM context
     GARBAGE_PATTERNS = [
-        r'^leted\s*$',  # Fragment of "completed"
+        r'^leted\b',        # Fragment of "completed" (can have trailing content)
+        r'^eted\b',         # Another fragment
+        r'^pleted\b',       # Another fragment
         r'^Completed?\s*$',
         r'^Code:\s*',
         r'^File:\s*',
@@ -161,6 +173,22 @@ class CodeExtractor:
         r'^\s*\.html\s*$',  # Standalone ".html"
         r'^\s*\.css\s*$',   # Standalone ".css"
         r'^\s*\.js\s*$',    # Standalone ".js"
+        r'^//\s*static/',   # JS comment with static path
+        r'^//\s*templates/', # JS comment with template path
+        r'^//\s*[a-zA-Z_]+\.(py|js|css|html)\s*$',  # JS comment that's just a filename
+        r'^#\s*static/',    # Python/CSS comment with static path
+        r'^#\s*[a-zA-Z_]+\.(py|js|css|html)\s*$',   # Python comment that's just a filename
+        r'^/\*\s*static/',  # CSS/JS block comment with static path
+    ]
+
+    # Patterns that indicate end-of-file garbage (truncation/mixing)
+    END_GARBAGE_PATTERNS = [
+        r'^File:\s*\S+\.py',      # "File: something.py" at end
+        r'^```\w*\s*$',           # Stray code fence
+        r'^Code:\s*\S+\.(py|js|css|html)',  # "Code: filename"
+        r'^\*\*\w+\*\*:',         # "**Something**:" markdown
+        r'^---+\s*$',             # Horizontal rule
+        r'^Step \d+:',            # Step markers
     ]
 
     def _clean_code(self, code: str, file_ext: str) -> str:
@@ -202,14 +230,20 @@ class CodeExtractor:
                 if is_garbage:
                     continue
 
-            # Check if this line looks like actual code
+            # Check if this line looks like actual code (not just a comment with filename)
             if not found_code and line.strip():
+                # Skip comments that are just filenames (even though they look like code)
+                if re.match(r'^\s*//\s*[a-zA-Z_/]+\.(js|py|css|html)\s*$', line):
+                    continue
+                if re.match(r'^\s*#\s*[a-zA-Z_/]+\.(js|py|css|html)\s*$', line):
+                    continue
+
                 # For different file types, check if it's real code
-                if file_ext == '.py' and re.match(r'^\s*(from |import |def |class |@|#|"""|\'\'\' |[a-zA-Z_])', line):
+                if file_ext == '.py' and re.match(r'^\s*(from |import |def |class |@|#[^a-zA-Z_/]|"""|\'\'\' |[a-zA-Z_])', line):
                     found_code = True
                 elif file_ext == '.css' and re.match(r'^\s*([a-zA-Z#.*:@\[]|/\*)', line):
                     found_code = True
-                elif file_ext == '.js' and re.match(r'^\s*(//|/\*|document\.|window\.|const |let |var |function |class |import |export |async |\()', line):
+                elif file_ext == '.js' and re.match(r'^\s*(//[^a-zA-Z_/]|/\*|document\.|window\.|const |let |var |function |class |import |export |async |\()', line):
                     found_code = True
                 elif file_ext == '.html' and re.match(r'^\s*(<|<!)', line):
                     found_code = True
@@ -219,6 +253,9 @@ class CodeExtractor:
             if found_code or (i > 4):  # After 5 lines, accept everything
                 cleaned_lines.append(line)
 
+        # Trim end-of-file garbage (truncation artifacts, mixed content)
+        cleaned_lines = self._trim_end_garbage(cleaned_lines)
+
         # Remove leading/trailing empty lines
         while cleaned_lines and not cleaned_lines[0].strip():
             cleaned_lines.pop(0)
@@ -226,6 +263,30 @@ class CodeExtractor:
             cleaned_lines.pop()
 
         return '\n'.join(cleaned_lines)
+
+    def _trim_end_garbage(self, lines: list) -> list:
+        """Remove garbage from end of file (truncation/mixing artifacts)"""
+        if not lines:
+            return lines
+
+        # Scan from end looking for garbage patterns
+        end_idx = len(lines)
+        for i in range(len(lines) - 1, max(0, len(lines) - 20), -1):
+            line = lines[i]
+            is_end_garbage = False
+
+            for pattern in self.END_GARBAGE_PATTERNS:
+                if re.match(pattern, line, re.IGNORECASE):
+                    is_end_garbage = True
+                    break
+
+            if is_end_garbage:
+                end_idx = i
+            elif line.strip():
+                # Found non-garbage content, stop scanning
+                break
+
+        return lines[:end_idx]
 
     def _is_filename_line(self, line: str) -> bool:
         """Check if line is just a filename or path"""
@@ -279,10 +340,22 @@ class CodeExtractor:
 
         # For CSS, try to find CSS-only content
         if file_ext == '.css':
-            # Find content between style tags or CSS-looking blocks
-            css_match = re.search(r'((?:body|html|\.|\#|@)[^<]*\{[^}]+\}(?:\s*[^<]*\{[^}]+\})*)', response, re.DOTALL)
-            if css_match:
-                return css_match.group(1).strip()
+            # Find all CSS rule blocks
+            css_rules = []
+            # Match selector { properties }
+            for match in re.finditer(r'([a-zA-Z#.*:@\[][^{<>]*)\{([^}]+)\}', response, re.DOTALL):
+                selector = match.group(1).strip()
+                props = match.group(2).strip()
+                # Skip if selector looks like HTML or JS
+                if '<' in selector or '>' in selector or 'function' in selector:
+                    continue
+                # Skip if selector starts with html> or similar HTML artifacts
+                if selector.startswith('html>') or selector.startswith('body>'):
+                    continue
+                css_rules.append(f'{selector} {{\n{props}\n}}')
+
+            if css_rules:
+                return '\n\n'.join(css_rules)
 
         # For JS, try to find JS-only content
         if file_ext == '.js':

@@ -55,11 +55,14 @@ class Orchestrator:
         metrics = start_request()
 
         try:
-            # Ensure router is loaded
+            # Ensure router is loaded (only show loading message if not already cached)
             if self.router is None:
-                with thinking(ThinkingStep.LOADING_MODEL, "Intent Router"):
-                    with time_operation("router_load"):
-                        self._load_router()
+                if not self.lifecycle.is_loaded(ModelRole.ROUTER):
+                    with thinking(ThinkingStep.LOADING_MODEL, "Intent Router"):
+                        with time_operation("router_load"):
+                            self._load_router()
+                else:
+                    self._load_router()
 
             # Classify intent
             with thinking(ThinkingStep.CLASSIFYING):
@@ -298,14 +301,19 @@ Answer:"""
         Returns:
             Coding result
         """
-        # Load primary coder model
-        with thinking(ThinkingStep.LOADING_MODEL, "Qwen2.5-Coder 7B"):
-            try:
-                with time_operation("coder_model_load"):
-                    coder_model = self.lifecycle.ensure_loaded(ModelRole.CODER)
-            except Exception as e:
-                display_error(f"Failed to load coder model: {e}")
-                return f"✗ Failed to load coder model: {e}"
+        # Load primary coder model (only show loading message if not already cached)
+        try:
+            if self.lifecycle.is_loaded(ModelRole.CODER):
+                # Model already loaded - just get reference
+                coder_model = self.lifecycle.ensure_loaded(ModelRole.CODER)
+            else:
+                # Model needs loading - show progress
+                with thinking(ThinkingStep.LOADING_MODEL, "Qwen2.5-Coder 7B"):
+                    with time_operation("coder_model_load"):
+                        coder_model = self.lifecycle.ensure_loaded(ModelRole.CODER)
+        except Exception as e:
+            display_error(f"Failed to load coder model: {e}")
+            return f"✗ Failed to load coder model: {e}"
 
         # Create PrimaryCoder instance
         coder = PrimaryCoder(coder_model.model_path, coder_model.config)
@@ -647,13 +655,15 @@ Answer:"""
             Algorithm specialist result
         """
         # Unload coder to free memory
-        logger.info("Unloading coder model to free memory...")
         self.lifecycle.unload_model(ModelRole.CODER)
 
-        # Load algorithm specialist
-        logger.info("Loading DeepSeek-Coder 6.7B (Algorithm Specialist)...")
+        # Load algorithm specialist (only show loading message if not already cached)
         try:
-            algo_model = self.lifecycle.ensure_loaded(ModelRole.ALGORITHM)
+            if self.lifecycle.is_loaded(ModelRole.ALGORITHM):
+                algo_model = self.lifecycle.ensure_loaded(ModelRole.ALGORITHM)
+            else:
+                with thinking(ThinkingStep.LOADING_MODEL, "DeepSeek-Coder 6.7B"):
+                    algo_model = self.lifecycle.ensure_loaded(ModelRole.ALGORITHM)
         except Exception as e:
             return f"✗ Failed to load algorithm specialist: {e}"
 
@@ -689,11 +699,13 @@ Answer:"""
         Returns:
             Algorithm result
         """
-        logger.info("Loading DeepSeek-Coder 6.7B (Algorithm Specialist)...")
-
-        # Load algorithm specialist
+        # Load algorithm specialist (only show loading message if not already cached)
         try:
-            algo_model = self.lifecycle.ensure_loaded(ModelRole.ALGORITHM)
+            if self.lifecycle.is_loaded(ModelRole.ALGORITHM):
+                algo_model = self.lifecycle.ensure_loaded(ModelRole.ALGORITHM)
+            else:
+                with thinking(ThinkingStep.LOADING_MODEL, "DeepSeek-Coder 6.7B"):
+                    algo_model = self.lifecycle.ensure_loaded(ModelRole.ALGORITHM)
         except Exception as e:
             return f"✗ Failed to load algorithm specialist: {e}"
 

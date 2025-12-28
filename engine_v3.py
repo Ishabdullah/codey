@@ -712,14 +712,30 @@ def main():
                     continue
 
                 # Filter out llama.cpp log noise that might get captured
-                if (user_input.startswith("llama_") or 
+                if (user_input.startswith("llama_") or
                     user_input.startswith("ggml_") or
-                    user_input.startswith("main:") or 
+                    user_input.startswith("main:") or
                     "n_ctx" in user_input):
                     continue
 
                 if user_input.lower() in ['exit', 'quit']:
                     break
+
+                # Handle multi-line input: collect additional lines if available
+                # This prevents multi-line pastes from being split into separate prompts
+                import sys
+                import select
+                try:
+                    # Check if there's more input waiting in stdin (non-blocking)
+                    while select.select([sys.stdin], [], [], 0.05)[0]:
+                        additional = sys.stdin.readline()
+                        if additional:
+                            user_input += "\n" + additional.rstrip()
+                        else:
+                            break
+                except (OSError, ValueError):
+                    # select() not available on some platforms, skip multi-line collection
+                    pass
 
                 if user_input.lower() == 'help':
                     print("""
