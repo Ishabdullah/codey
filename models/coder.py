@@ -56,6 +56,9 @@ class PrimaryCoder(BaseModel):
     - Mathematical/computational problems
     """
 
+    # Default max tokens for generation (can be overridden per-request)
+    default_max_tokens = 256
+
     SYSTEM_PROMPT = """You are an expert code generator. Your ONLY job is to write code.
 
 OUTPUT FORMAT:
@@ -328,7 +331,7 @@ RESTRICTIONS:
             response = self.generate(
                 prompt,
                 temperature=self.config.get("temperature", 0.3),
-                max_tokens=512,  # Reasonable size for code generation
+                max_tokens=getattr(self, 'default_max_tokens', 256),  # Use configurable limit
                 stop=["</s>", "\n\n\n", "User:", "Human:", "<|im_end|>"]  # Proper stop sequences
             )
 

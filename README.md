@@ -1,8 +1,8 @@
 # Codey: The Local, CPU-Optimized AI Engineer
 
-> **Version:** 3.2 (Phase 6: CPU Optimization + Real-Time Streaming)
+> **Version:** 3.3 (Phase 6.1: Code Extraction Fixes + Quality Improvements)
 > **Architecture:** Local Multi-Model Orchestration with Chunked Execution
-> **Focus:** Privacy, Zero-Cloud Dependency, CPU-Optimized Generation, Real-Time File Output
+> **Focus:** Privacy, Zero-Cloud Dependency, CPU-Optimized Generation, Robust Code Extraction
 
 Codey is a command-line AI software engineer designed to run **entirely on your local machine**. Unlike cloud-based assistants that rely on massive server farms, Codey runs on standard consumer hardware, including high-end mobile devices via Termux or UserLAnd. It maintains complete data privacy by ensuring no code or telemetry ever leaves your machine.
 
@@ -287,6 +287,59 @@ Automatically generates project documentation:
 
 ---
 
+## Phase 6.1: Code Extraction & Quality Fixes
+
+Phase 6.1 addresses code quality issues discovered during full-stack generation testing:
+
+### Robust Code Extraction (`core/code_extractor.py`)
+New CodeExtractor module handles all edge cases:
+- Extracts code from ` ```language` code blocks
+- Handles `# FILE: filename` markers
+- Strips markdown wrappers and filename-only lines
+- Validates content type matches expected file extension
+
+### Explicit Chunk Prompts
+Prompts now explicitly specify output format:
+```text
+Write CSS code for style.css.
+OUTPUT ONLY CSS - no HTML, no JavaScript, no markdown
+Start directly with CSS selectors like 'body {' or '* {'
+```
+
+### Content Type Validation
+Before saving files, content is validated:
+- `.css` files must contain CSS selectors, not HTML
+- `.js` files must contain JavaScript, not HTML
+- Wrong content triggers automatic retry with clarified prompt
+
+### Retry on Wrong Content Type
+If generated content doesn't match expected file type:
+1. Detect mismatch (e.g., HTML in .css file)
+2. Retry with ultra-explicit prompt
+3. Up to 2 retries before accepting best result
+
+### Template-Based Generation
+These files no longer use LLM generation (faster, more reliable):
+- **requirements.txt**: Template with Flask dependencies
+- **README.md**: Uses ReadmeGenerator class
+
+### Token Budget Enforcement
+Max tokens now passed from chunk plan to coder:
+- Each chunk respects its token budget (256-384)
+- Prevents single chunks from consuming excessive tokens
+
+### Batch Directory Permissions
+Multiple directories created with single permission prompt:
+```text
+🔒 Permission required: Create 3 directories?
+   - templates
+   - static/css
+   - static/js
+   Proceed? [y/n]:
+```
+
+---
+
 ## Performance Tuning
 
 Running LLMs on CPU requires understanding the bottlenecks:
@@ -359,8 +412,16 @@ Codey evolves by focusing on achievable milestones that respect local hardware c
     *   **Safe Tool Execution:** Tool aliases, retry logic, and automatic fallbacks.
     *   **Improved mkdir Handling (v3.2):** Properly handles `-p` flag and multiple directories.
     *   **README Auto-Generation:** Automatically generates project documentation after multi-step completions.
+*   **Phase 6.1: Code Extraction & Quality (v3.3):**
+    *   **Robust Code Extraction:** New CodeExtractor module handles markdown wrappers, FILE markers, and content validation.
+    *   **Explicit Chunk Prompts:** File-type-specific prompts with clear output format instructions.
+    *   **Content Type Validation:** Validates that .css contains CSS, .js contains JavaScript, etc.
+    *   **Automatic Retry:** Wrong content type triggers retry with ultra-explicit clarification prompt.
+    *   **Template-Based Generation:** requirements.txt and README.md use templates instead of LLM.
+    *   **Token Budget Enforcement:** Max tokens passed from chunk plan to coder for strict budget control.
+    *   **Batch Directory Permissions:** Multiple directories created with single permission prompt.
 
-### 🟡 Near Term (v3.2 - v3.5)
+### 🟡 Near Term (v3.4 - v3.5)
 *   **Unified Model Strategy:** Merge Algorithm/Coder roles into a single 7B model to eliminate reloading times.
 *   **Smart Context:** Implement a sliding window or summary mechanism for long conversations.
 

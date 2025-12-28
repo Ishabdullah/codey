@@ -87,7 +87,7 @@ class Orchestrator:
                 return self._handle_simple_answer(intent_result, user_input)
 
             elif intent_result.is_coding_task():
-                return self._handle_coding_task(intent_result, user_input)
+                return self._handle_coding_task(intent_result, user_input, context)
 
             elif intent_result.is_algorithm_task():
                 return self._handle_algorithm_task(intent_result, user_input)
@@ -287,12 +287,13 @@ Answer:"""
 
         return "I can answer simple questions, but the router model is not available."
 
-    def _handle_coding_task(self, intent: IntentResult, user_input: str) -> str:
+    def _handle_coding_task(self, intent: IntentResult, user_input: str, context: dict = None) -> str:
         """Handle coding tasks - escalate to coder model
 
         Args:
             intent: Intent classification result
             user_input: Original user input
+            context: Optional context with max_tokens, etc.
 
         Returns:
             Coding result
@@ -310,6 +311,10 @@ Answer:"""
         coder = PrimaryCoder(coder_model.model_path, coder_model.config)
         coder._model = coder_model._model
         coder._loaded = coder_model._loaded
+
+        # Apply max_tokens from context if provided
+        if context and 'max_tokens' in context:
+            coder.default_max_tokens = context['max_tokens']
 
         # Build coding task from intent
         with thinking(ThinkingStep.ANALYZING):

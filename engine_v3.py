@@ -29,6 +29,7 @@ from core.response_handler import ResponseHandler
 from core.task_planner import TaskPlanner, StepStatus, TaskType
 from core.progress_tracker import ProgressTracker, TaskPhase, StepType
 from core.readme_generator import ReadmeGenerator
+from core.code_extractor import CodeExtractor, extract_code, validate_file_content
 
 
 class EngineV3:
@@ -392,70 +393,267 @@ class EngineV3:
         # Build chunk-specific prompt
         chunk_prompt = self._build_chunk_prompt(step, task_description)
 
-        # Use orchestrator for actual generation
-        # But with reduced max_tokens for CPU safety
-        response = self.orchestrator.process(chunk_prompt, context)
+        # Handle template-based generation (no LLM needed)
+        if chunk_prompt == "__TEMPLATE_REQUIREMENTS__":
+            code = self._generate_requirements_template(task_description)
+            self.file_tools.write_file(filename, code, overwrite=True)
+            return f"✓ Created {filename} (template)\n```\n{code}\n```"
 
-        # Save file if generation succeeded
-        if response and not response.startswith("✗"):
-            # Extract code from response if wrapped
-            code = self._extract_code_from_response(response, filename)
+        if chunk_prompt == "__TEMPLATE_README__":
+            code = self._generate_readme_template(task_description, context)
+            self.file_tools.write_file(filename, code, overwrite=True)
+            return f"✓ Created {filename} (template)\n```\n{code[:500]}...\n```"
 
-            if code:
-                # Ensure directories exist
-                file_path = Path(filename)
-                if file_path.parent and str(file_path.parent) != '.':
-                    self.tool_executor.create_directory_safe(str(file_path.parent))
+        # Use orchestrator for LLM-based generation with retry on wrong content type
+        max_retries = 2
+        file_ext = Path(filename).suffix.lower()
 
-                # Write file
-                self.file_tools.write_file(filename, code, overwrite=True)
-                return f"✓ Created {filename}\n```\n{code[:500]}{'...' if len(code) > 500 else ''}\n```"
+        # Prepare context with max_tokens for budget enforcement
+        gen_context = context.copy() if context else {}
+        gen_context['max_tokens'] = max_tokens
+
+        print(f"   📄 Generating {filename}...")  # Better progress display
+
+        for attempt in range(max_retries + 1):
+            response = self.orchestrator.process(chunk_prompt, gen_context)
+
+            # Save file if generation succeeded
+            if response and not response.startswith("✗"):
+                # Extract code from response if wrapped
+                code = self._extract_code_from_response(response, filename)
+
+                if code:
+                    # Validate content type
+                    is_valid, validation_msg = validate_file_content(code, filename)
+
+                    if not is_valid and attempt < max_retries:
+                        # Retry with more explicit prompt
+                        print(f"   ⚠️  Wrong content type (attempt {attempt + 1}), retrying...")
+                        chunk_prompt = self._get_retry_prompt(filename, file_ext, validation_msg)
+                        continue
+
+                    # Ensure directories exist (silently - batch permission already granted)
+                    file_path = Path(filename)
+                    if file_path.parent and str(file_path.parent) != '.':
+                        parent_dir = self.config.workspace_dir / file_path.parent
+                        parent_dir.mkdir(parents=True, exist_ok=True)
+
+                    # Write file
+                    self.file_tools.write_file(filename, code, overwrite=True)
+                    return f"✓ Created {filename}\n```\n{code[:500]}{'...' if len(code) > 500 else ''}\n```"
+
+            break  # Don't retry on empty response
 
         return response
 
+    def _get_retry_prompt(self, filename: str, file_ext: str, error_msg: str) -> str:
+        """Get a clarified retry prompt after content type mismatch
+
+        Args:
+            filename: Target filename
+            file_ext: File extension
+            error_msg: What went wrong
+
+        Returns:
+            Clarified prompt
+        """
+        prompts = {
+            '.css': f"""IMPORTANT: Output ONLY CSS code for {filename}.
+
+DO NOT output HTML. DO NOT output JavaScript.
+Start with CSS selectors like:
+
+* {{
+    box-sizing: border-box;
+}}
+
+body {{
+    font-family: Arial, sans-serif;
+}}
+
+Output ONLY valid CSS. No markdown, no explanation.""",
+
+            '.js': f"""IMPORTANT: Output ONLY JavaScript code for {filename}.
+
+DO NOT output HTML. DO NOT output CSS.
+Start with JavaScript like:
+
+document.addEventListener('DOMContentLoaded', function() {{
+    // Your code here
+}});
+
+Output ONLY valid JavaScript. No markdown, no explanation.""",
+
+            '.py': f"""IMPORTANT: Output ONLY Python code for {filename}.
+
+Start with imports like:
+
+from flask import Flask, request, jsonify
+
+Output ONLY valid Python. No markdown, no explanation.""",
+        }
+
+        return prompts.get(file_ext, f"Output ONLY the content for {filename}. No markdown, no explanation.")
+
+    def _generate_requirements_template(self, task_description: str) -> str:
+        """Generate requirements.txt from template (no LLM needed)
+
+        Args:
+            task_description: Task description for detecting dependencies
+
+        Returns:
+            requirements.txt content
+        """
+        task_lower = task_description.lower()
+
+        # Base Flask requirements
+        requirements = ["Flask>=2.0.0"]
+
+        # Add based on task
+        if 'database' in task_lower or 'sqlite' in task_lower or 'sql' in task_lower:
+            requirements.append("Flask-SQLAlchemy>=3.0.0")
+
+        if 'form' in task_lower or 'wtf' in task_lower:
+            requirements.append("Flask-WTF>=1.0.0")
+
+        if 'auth' in task_lower or 'login' in task_lower:
+            requirements.append("Flask-Login>=0.6.0")
+
+        if 'api' in task_lower or 'rest' in task_lower:
+            requirements.append("flask-restful>=0.3.9")
+
+        if 'cors' in task_lower:
+            requirements.append("flask-cors>=3.0.0")
+
+        # Common utilities
+        requirements.append("python-dotenv>=0.19.0")
+
+        return '\n'.join(requirements) + '\n'
+
+    def _generate_readme_template(self, task_description: str, context: Optional[dict]) -> str:
+        """Generate README.md using ReadmeGenerator (no LLM needed)
+
+        Args:
+            task_description: Task description
+            context: Context with generated files info
+
+        Returns:
+            README.md content
+        """
+        # Get list of generated files from context or scan workspace
+        generated_files = []
+        if context and 'generated_files' in context:
+            generated_files = context['generated_files']
+        else:
+            # Scan workspace for common files
+            workspace = self.config.workspace_dir
+            for pattern in ['*.py', '*.html', '*.css', '*.js', 'templates/*.html', 'static/**/*']:
+                generated_files.extend([str(f.relative_to(workspace)) for f in workspace.glob(pattern) if f.is_file()])
+
+        # Use ReadmeGenerator
+        readme_gen = ReadmeGenerator(self.config.workspace_dir)
+        extra_context = {
+            'is_fullstack': True,
+            'has_database': 'database' in task_description.lower() or 'sqlite' in task_description.lower()
+        }
+
+        return readme_gen.generate(
+            task_description=task_description,
+            generated_files=generated_files,
+            extra_context=extra_context
+        )
+
     def _build_chunk_prompt(self, step, task_description: str) -> str:
-        """Build prompt for a specific chunk
+        """Build prompt for a specific chunk with explicit output format instructions
 
         Args:
             step: TaskStep with chunk info
             task_description: Overall task description
 
         Returns:
-            Prompt string
+            Prompt string with clear format instructions
         """
         filename = step.params.get('file', 'output.py')
         file_type = Path(filename).suffix.lower()
 
-        # Type-specific prompts
+        # Common instruction suffix
+        format_instruction = "\n\nIMPORTANT: Output ONLY the file content. No explanations, no markdown, no ```."
+
+        # Type-specific prompts with explicit format requirements
         if file_type == '.py':
             if 'model' in filename.lower():
-                return f"create {filename} with SQLite models for: {task_description}"
+                base = f"""Write Python code for {filename} with SQLite models.
+Task: {task_description}
+
+Requirements:
+- SQLAlchemy or sqlite3 models
+- Include docstrings
+- No markdown formatting"""
             elif 'init_db' in filename.lower():
-                return f"create {filename} to initialize SQLite database"
+                base = f"""Write Python code for {filename} to initialize the SQLite database.
+- Create tables
+- Add any seed data
+- No markdown formatting"""
             elif 'app' in filename.lower():
-                return f"create {filename} Flask app for: {task_description}"
+                base = f"""Write Python Flask application code for {filename}.
+Task: {task_description}
+
+Requirements:
+- Flask app with routes
+- CRUD endpoints if needed
+- Error handling
+- No markdown formatting, just Python code"""
             else:
-                return f"create {filename}: {step.description}"
+                base = f"""Write Python code for {filename}.
+Task: {step.description}
+No markdown formatting, just Python code."""
+            return base + format_instruction
 
         elif file_type == '.html':
-            return f"create {filename} HTML template for: {task_description}"
+            return f"""Write HTML code for {filename}.
+Task: {task_description}
+
+Requirements:
+- Valid HTML5 structure
+- Link to /static/css/style.css
+- Link to /static/js/app.js or script.js
+- No markdown formatting, just HTML code""" + format_instruction
 
         elif file_type == '.css':
-            return f"create {filename} CSS styles: clean, modern design"
+            return f"""Write CSS code for {filename}.
+Task: Create modern, clean styles for the application.
+
+Requirements:
+- Body, form, button, input styles
+- Responsive design basics
+- OUTPUT ONLY CSS - no HTML, no JavaScript, no markdown
+- Start directly with CSS selectors like 'body {{' or '* {{'""" + format_instruction
 
         elif file_type == '.js':
-            return f"create {filename} JavaScript: fetch API calls, DOM manipulation"
+            return f"""Write JavaScript code for {filename}.
+Task: {task_description}
+
+Requirements:
+- Fetch API for backend communication
+- DOM manipulation
+- Event handlers
+- OUTPUT ONLY JavaScript - no HTML, no CSS, no markdown
+- Start directly with 'document.' or 'const ' or 'function '""" + format_instruction
 
         elif file_type == '.txt' and 'requirements' in filename.lower():
-            return "create requirements.txt with Flask dependencies"
+            # Don't use LLM for requirements.txt - use template
+            return "__TEMPLATE_REQUIREMENTS__"
 
         elif file_type == '.md':
-            return f"create README.md for: {task_description}"
+            # Don't use LLM for README - use ReadmeGenerator
+            return "__TEMPLATE_README__"
 
-        return f"create {filename}: {step.description}"
+        return f"""Write code for {filename}.
+Task: {step.description}
+No markdown formatting, just the file content.""" + format_instruction
 
     def _extract_code_from_response(self, response: str, filename: str) -> Optional[str]:
-        """Extract code from orchestrator response
+        """Extract code from orchestrator response using robust CodeExtractor
 
         Args:
             response: Response from orchestrator
@@ -464,26 +662,18 @@ class EngineV3:
         Returns:
             Extracted code or None
         """
-        import re
+        # Use the new robust code extractor
+        code, status = extract_code(response, filename)
 
-        # Try to extract code blocks
-        patterns = [
-            r'```\w*\n(.*?)```',  # Standard code block
-            r'File: [^\n]+\n```\w*\n(.*?)```',  # File: filename format
-        ]
+        if code:
+            # Validate content type matches filename
+            is_valid, validation_msg = validate_file_content(code, filename)
 
-        for pattern in patterns:
-            match = re.search(pattern, response, re.DOTALL)
-            if match:
-                return match.group(1).strip()
+            if not is_valid:
+                print(f"   ⚠️  Content type mismatch for {filename}: {validation_msg}")
+                # Still return the code, but log warning
 
-        # If no code block, check if response looks like code
-        if response and not response.startswith("✗") and not response.startswith("Error"):
-            # Simple heuristic: if it has code-like patterns
-            code_indicators = ['def ', 'class ', 'import ', 'from ', '<html', '<!DOCTYPE',
-                               'function ', 'const ', 'let ', 'var ', '.', '{', 'body {']
-            if any(ind in response for ind in code_indicators):
-                return response.strip()
+            return code
 
         return None
 
