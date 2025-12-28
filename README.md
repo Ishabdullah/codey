@@ -201,6 +201,41 @@ For maintainers reproducing these metrics:
 *   **Speed:** Average `output_tokens / generation_ms` across 3 representative coding tasks.
 *   **Thermals:** Subjective observation of device heat or CPU throttling flags.
 
+## Tool Registry & Recommendations
+
+Codey supports a variety of local tools to enhance your development workflow. These tools are executed directly on your machine, leveraging the OS capabilities.
+
+| Category | Tool | Description | Example Usage |
+| :--- | :--- | :--- | :--- |
+| **File Management** | `file` | Read, write, list, and delete files in your workspace. | `read config.json`, `list files`, `delete temp.py` |
+| **Git** | `git` | Full version control integration. | `git status`, `git commit -m "update"`, `git diff` |
+| **Shell** | `shell` | Execute safe system commands. | `run tests.py`, `mkdir build`, `install numpy` |
+| **Testing** | `pytest` | Run test suites (via shell). | `run pytest tests/` |
+| **Documentation** | `pydoc` | View Python documentation (via shell). | `run pydoc -b` |
+| **Search** | `grep` / `find` | Search codebase (via shell). | `execute grep -r "TODO" .` |
+| **System** | `top` / `htop` | Monitor system resources (via shell). | `execute top -n 1` |
+
+## Future Enhancements (Realistic Roadmap)
+
+Codey evolves by focusing on achievable milestones that respect local hardware constraints.
+
+### 🟢 Achieved
+*   **Split-Brain Architecture:** Router (270M) + Coder (7B) separation.
+*   **Lifecycle Management:** Strict RAM budgeting and LRU model unloading.
+*   **Mobile Support:** Validated on Android via Termux/UserLAnd.
+*   **Tool Safety:** Strict registry and regex fallback for robustness.
+
+### 🟡 Near Term (v3.1 - v3.5)
+*   **Streaming Output:** Implement token streaming to reduce perceived latency (eliminate the 30s "thinking" pause).
+*   **Unified Model Strategy:** Merge Algorithm/Coder roles into a single 7B model to eliminate reloading times.
+*   **Smart Context:** Implement a sliding window or summary mechanism for long conversations.
+
+### 🔴 Long Term (v4.0+)
+*   **Multi-Modal Input:** Support for image inputs (e.g., "build this UI").
+*   **Local Knowledge Base:** RAG (Retrieval-Augmented Generation) over your local codebase.
+*   **Plugin System:** Allow users to define custom tools via Python scripts.
+*   **Speculative Decoding:** Use the small router to speed up the large model (hardware permitting).
+
 ## License
 
 Codey is made available under a custom "Source Available" license.
@@ -209,9 +244,3 @@ Codey is made available under a custom "Source Available" license.
 *   **You may NOT:** Sell, redistribute for profit, or commercially exploit this software.
 
 See [LICENSE.md](LICENSE.md) for full terms.
-
-## Future Roadmap
-
-*   **Streaming Output:** To improve perceived latency during generation.
-*   **Unified Model Strategy:** Merging Algorithm/Coder roles to reduce loading times.
-*   **Smart Context:** Improved handling of long conversation history and context windows.
