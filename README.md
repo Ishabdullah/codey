@@ -6,6 +6,8 @@
 
 Codey is a command-line AI software engineer designed to run **entirely on your local machine**. Unlike cloud-based assistants that rely on massive server farms, Codey runs on standard consumer hardware, including high-end mobile devices via Termux or UserLAnd. It maintains complete data privacy by ensuring no code or telemetry ever leaves your machine.
 
+---
+
 ## Design Philosophy
 
 Codey is built upon three core principles regarding local AI execution:
@@ -13,6 +15,8 @@ Codey is built upon three core principles regarding local AI execution:
 1.  **CPU-First by Design:** Codey is not a GPU-native application that merely tolerates CPUs. It is engineered specifically for the latency and bandwidth constraints of system RAM and CPU inference.
 2.  **Stability Over Speed:** On local hardware, aggressive resource usage leads to system instability. Codey strictly budgets memory and prioritizes system responsiveness over raw token generation speed.
 3.  **Iterative Correctness:** Codey favors iterative improvement over one-shot generation. Given the constraints of 7B parameter models, reliability is achieved by breaking complex tasks into smaller, verifiable steps rather than attempting complex architecture in a single pass.
+
+---
 
 ## Capability Reality Check
 
@@ -33,6 +37,8 @@ Codey operates within strict confidence and capability limits. It is designed to
 *   Explicitly report when a task exceeds its context window or logical capabilities.
 *   Treat guessing and hallucination as critical failures, not features.
 *   Request narrower scope or clarification rather than attempting low-confidence generation.
+
+---
 
 ## System Architecture
 
@@ -59,6 +65,8 @@ Codey employs a strict tool execution policy to prevent hallucinated actions:
 *   **Safety Fallback:** If the Intent Router predicts a tool that doesn't exist (e.g., "tool: fix_code"), the system automatically intercepts this error and redirects the request to the general coding or Q&A path.
 *   **Normalization:** Aliases are automatically mapped (e.g., "read" → "file", "terminal" → "shell") to handle natural language variations.
 
+---
+
 ## Getting Started
 
 ### Prerequisites
@@ -77,7 +85,7 @@ cd codey
 pip install -r requirements.txt
 ```
 
-### Mobile-First Demo
+### Getting Started Example: Mobile-First Demo
 
 Codey has been validated to run end-to-end on high-end mobile devices (e.g., Samsung Galaxy S24 Ultra) via Termux or UserLAnd.
 
@@ -134,6 +142,8 @@ This demo validates that Codey's split-brain architecture (Router + Coder) funct
 Codey auto-generates a `config.json` on first run. Key settings to tune:
 *   `memory_budget_mb`: Set this to approximately 70% of available RAM.
 *   `n_threads`: Set to the number of physical CPU cores.
+
+---
 
 ## Usage
 
@@ -201,19 +211,23 @@ For maintainers reproducing these metrics:
 *   **Speed:** Average `output_tokens / generation_ms` across 3 representative coding tasks.
 *   **Thermals:** Subjective observation of device heat or CPU throttling flags.
 
+---
+
 ## Tool Registry & Recommendations
 
 Codey supports a variety of local tools to enhance your development workflow. These tools are executed directly on your machine, leveraging the OS capabilities.
 
 | Category | Tool | Description | Example Usage |
 | :--- | :--- | :--- | :--- |
-| **File Management** | `file` | Read, write, list, and delete files in your workspace. | `read config.json`, `list files`, `delete temp.py` |
-| **Git** | `git` | Full version control integration. | `git status`, `git commit -m "update"`, `git diff` |
+| **File Management** | `file` | Read, write, list, and delete files in your workspace. | [`read config.json`](#example-workflows), `list files` |
+| **Git** | `git` | Full version control integration. | [`git status`](#example-workflows), `git commit` |
 | **Shell** | `shell` | Execute safe system commands. | `run tests.py`, `mkdir build`, `install numpy` |
 | **Testing** | `pytest` | Run test suites (via shell). | `run pytest tests/` |
 | **Documentation** | `pydoc` | View Python documentation (via shell). | `run pydoc -b` |
-| **Search** | `grep` / `find` | Search codebase (via shell). | `execute grep -r "TODO" .` |
-| **System** | `top` / `htop` | Monitor system resources (via shell). | `execute top -n 1` |
+| **Search** | `grep` | Search codebase (via shell). | `execute grep -r "TODO" .` |
+| **System** | `top` | Monitor system resources (via shell). | `execute top -n 1` |
+
+---
 
 ## Future Enhancements (Realistic Roadmap)
 
@@ -226,20 +240,23 @@ Codey evolves by focusing on achievable milestones that respect local hardware c
 *   **Tool Safety:** Strict registry and regex fallback for robustness.
 
 ### 🟡 Near Term (v3.1 - v3.5)
-*   **Streaming Output:** Implement token streaming to reduce perceived latency (eliminate the 30s "thinking" pause).
+*   **Streaming Output:** Implement token streaming to reduce perceived latency (eliminating the 30s "thinking" pause).
 *   **Unified Model Strategy:** Merge Algorithm/Coder roles into a single 7B model to eliminate reloading times.
 *   **Smart Context:** Implement a sliding window or summary mechanism for long conversations.
 
 ### 🔴 Long Term (v4.0+)
-*   **Multi-Modal Input:** Support for image inputs (e.g., "build this UI").
-*   **Local Knowledge Base:** RAG (Retrieval-Augmented Generation) over your local codebase.
+*   **Multi-Modal Input:** Support for image inputs (e.g., "build this UI") — *requires larger VRAM/RAM*.
+*   **Local Knowledge Base:** RAG (Retrieval-Augmented Generation) over your local codebase — *requires embedding model integration*.
 *   **Plugin System:** Allow users to define custom tools via Python scripts.
-*   **Speculative Decoding:** Use the small router to speed up the large model (hardware permitting).
+*   **Speculative Decoding:** Use the small router to speed up the large model — *hardware permitting*.
+
+---
 
 ## License
 
 Codey is made available under a custom "Source Available" license.
 
+**Summary at a glance:**
 *   **You may:** Use, study, run, and modify the source code for personal or educational purposes.
 *   **You may NOT:** Sell, redistribute for profit, or commercially exploit this software.
 
