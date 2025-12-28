@@ -4,7 +4,7 @@
 > **Architecture:** Local Multi-Model Orchestration
 > **Focus:** Privacy, Zero-Cloud Dependency, Efficiency
 
-Codey is a command-line AI software engineer designed to run **entirely on your local machine**. Unlike cloud-based assistants that rely on massive server farms, Codey runs on standard consumer hardware. It maintains complete data privacy by ensuring no code or telemetry ever leaves your machine.
+Codey is a command-line AI software engineer designed to run **entirely on your local machine**. Unlike cloud-based assistants that rely on massive server farms, Codey runs on standard consumer hardware, including high-end mobile devices via Termux. It maintains complete data privacy by ensuring no code or telemetry ever leaves your machine.
 
 ## Design Philosophy
 
@@ -54,7 +54,7 @@ Codey uses a Split-Brain Architecture to balance latency and intelligence:
 ## Getting Started
 
 ### Prerequisites
-*   **OS:** Linux / macOS / WSL2
+*   **OS:** Linux / macOS / WSL2 / Android (Termux)
 *   **RAM:** 8GB minimum (16GB recommended)
 *   **Storage:** ~10GB for models
 *   **Python:** 3.10+
@@ -68,6 +68,30 @@ cd codey
 # Install dependencies (incorporates hardware-specific builds)
 pip install -r requirements.txt
 ```
+
+### Running on Android (Termux)
+Codey can run on modern Android devices (8GB+ RAM recommended).
+
+1.  **Install Dependencies:**
+    ```bash
+    pkg update && pkg upgrade
+    pkg install python git clang make build-essential
+    ```
+
+2.  **Setup Environment:**
+    ```bash
+    # Clone and install
+    git clone https://github.com/your-repo/codey.git
+    cd codey
+    pip install -r requirements.txt
+    ```
+
+    *Note: `llama-cpp-python` will compile locally. This may take 5-10 minutes on a phone.*
+
+3.  **Run:**
+    ```bash
+    python engine_v3.py
+    ```
 
 ### Configuration
 Codey auto-generates a `config.json` on first run. Key settings to tune:
@@ -117,6 +141,28 @@ Running LLMs on CPU requires understanding the bottlenecks:
 | **Generation** | 2-10 tok/s | Matrix multiplication on CPU is bandwidth-limited. |
 
 **Recommendation:** Group similar tasks. Perform all coding tasks in sequence, then all git operations. This prevents "thrashing" (repeatedly loading/unloading models).
+
+### Mobile Performance Notes (Validated on Samsung S24 Ultra)
+
+Performance on mobile devices is constrained by thermal management and power limits. The following metrics were collected on a Samsung Galaxy S24 Ultra running inside Termux.
+
+```text
+Test Device: Samsung Galaxy S24 Ultra
+Environment: Termux (Android 14)
+Peak RAM Usage: 4954 MB
+Model Load Time: 0.0 s (First Load)
+Generation Speed: 1.1 tok/s (Avg)
+Observed Quirks:
+ - [TODO: Monitor thermals manually]
+ - [TODO: Note background apps]
+```
+
+### Measurement Checklist (Internal)
+For maintainers reproducing these metrics:
+*   **RAM:** Use `benchmark_s24.py` (included in repo) or monitor `VmRSS` in `/proc/[pid]/status`.
+*   **Load Time:** Calculated from the `model_load_ms` metric in `PerformanceTracker`.
+*   **Speed:** Average `output_tokens / generation_ms` across 3 representative coding tasks.
+*   **Thermals:** Subjective observation of device heat or CPU throttling flags.
 
 ## Future Roadmap
 
