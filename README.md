@@ -4,7 +4,7 @@
 > **Architecture:** Local Multi-Model Orchestration
 > **Focus:** Privacy, Zero-Cloud Dependency, Efficiency
 
-Codey is a command-line AI software engineer designed to run **entirely on your local machine**. Unlike cloud-based assistants that rely on massive server farms, Codey runs on standard consumer hardware, including high-end mobile devices via Termux. It maintains complete data privacy by ensuring no code or telemetry ever leaves your machine.
+Codey is a command-line AI software engineer designed to run **entirely on your local machine**. Unlike cloud-based assistants that rely on massive server farms, Codey runs on standard consumer hardware, including high-end mobile devices via Termux or UserLAnd. It maintains complete data privacy by ensuring no code or telemetry ever leaves your machine.
 
 ## Design Philosophy
 
@@ -54,7 +54,7 @@ Codey uses a Split-Brain Architecture to balance latency and intelligence:
 ## Getting Started
 
 ### Prerequisites
-*   **OS:** Linux / macOS / WSL2 / Android (Termux)
+*   **OS:** Linux / macOS / WSL2 / Android (Termux/UserLAnd)
 *   **RAM:** 8GB minimum (16GB recommended)
 *   **Storage:** ~10GB for models
 *   **Python:** 3.10+
@@ -144,17 +144,17 @@ Running LLMs on CPU requires understanding the bottlenecks:
 
 ### Mobile Performance Notes (Validated on Samsung S24 Ultra)
 
-Performance on mobile devices is constrained by thermal management and power limits. The following metrics were collected on a Samsung Galaxy S24 Ultra running inside Termux.
+Performance on mobile devices is constrained by thermal management and power limits. The following metrics were collected on a Samsung Galaxy S24 Ultra running Ubuntu inside UserLAnd.
 
 ```text
 Test Device: Samsung Galaxy S24 Ultra
-Environment: Termux (Android 14)
-Peak RAM Usage: 4954 MB
-Model Load Time: 0.0 s (First Load)
-Generation Speed: 1.1 tok/s (Avg)
+Environment: Ubuntu (UserLAnd)
+Peak RAM Usage: 5229 MB
+Model Load Time: 0.62 s (first coding task)
+Generation Speed: 1.26 tok/s (Avg)
 Observed Quirks:
- - [TODO: Monitor thermals manually]
- - [TODO: Note background apps]
+ - CPU temperature ranged ~44-58°C during generation (normal thermal rise, no throttling observed)
+ - Background apps may affect token generation speed
 ```
 
 ### Measurement Checklist (Internal)
