@@ -85,20 +85,36 @@ class TaskPlanner:
         """
         user_lower = user_input.lower()
 
-        # Check for multi-step indicators
-        if any(keyword in user_lower for keyword in self.multi_step_keywords):
+        # Skip multi-step detection for full-stack apps (handled separately)
+        if self.is_fullstack_app(user_input):
+            return False
+
+        # Check for explicit multi-step keywords (strong signals)
+        strong_keywords = ["then", "after that", "next", "followed by", "finally"]
+        if any(keyword in user_lower for keyword in strong_keywords):
             return True
 
-        # Check for parallel indicators
-        if any(keyword in user_lower for keyword in self.parallel_keywords):
-            # But not simple "create file x and y" (single task with multiple files)
-            if user_lower.count(' and ') == 1 and 'file' in user_lower:
-                return False
+        # Check for numbered steps (1. 2. 3. or 1) 2) 3))
+        import re
+        if re.search(r'\b[123]\s*[\.\)]\s+\w', user_input):
             return True
 
-        # Check for numbered steps
-        if any(f"{i}." in user_input or f"{i})" in user_input for i in range(1, 6)):
+        # Check for "first...second" pattern
+        if 'first' in user_lower and ('second' in user_lower or 'then' in user_lower):
             return True
+
+        # Don't split on "and" alone - it's too common in regular descriptions
+        # Only split if there are multiple action verbs
+        action_verbs = ['create', 'make', 'run', 'execute', 'delete', 'update', 'add', 'remove', 'install', 'build']
+        verb_count = sum(1 for verb in action_verbs if verb in user_lower)
+        if verb_count >= 2 and ' and ' in user_lower:
+            # Check if "and" connects two actions (not just descriptions)
+            parts = user_lower.split(' and ')
+            if len(parts) >= 2:
+                has_verb_before = any(verb in parts[0] for verb in action_verbs)
+                has_verb_after = any(verb in parts[1].split()[0:3] if parts[1].split() else [] for verb in action_verbs)
+                if has_verb_before and has_verb_after:
+                    return True
 
         return False
 
@@ -448,12 +464,12 @@ class TaskPlanner:
                 params={'file': 'models.py', 'max_tokens': 256}
             ))
 
-        # Step 2: Backend app initialization
+        # Step 2: Backend app initialization (needs more tokens for CRUD routes)
         steps.append(TaskStep(
             step_id=len(steps) + 1,
             task_type=TaskType.CODE_GEN,
             description=f"Create backend app with routes (app.py) - {user_input[:50]}",
-            params={'file': 'app.py', 'max_tokens': 384}
+            params={'file': 'app.py', 'max_tokens': 640}  # Increased for complete CRUD
         ))
 
         # Step 3: Database init (if needed)
@@ -490,12 +506,12 @@ class TaskPlanner:
             params={'file': 'static/css/style.css', 'max_tokens': 256}
         ))
 
-        # Step 7: JavaScript client
+        # Step 7: JavaScript client (needs more tokens for fetch CRUD operations)
         steps.append(TaskStep(
             step_id=len(steps) + 1,
             task_type=TaskType.CODE_GEN,
             description="Create JavaScript client (static/js/app.js)",
-            params={'file': 'static/js/app.js', 'max_tokens': 384}
+            params={'file': 'static/js/app.js', 'max_tokens': 512}
         ))
 
         # Step 8: Requirements file

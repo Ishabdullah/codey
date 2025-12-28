@@ -103,25 +103,31 @@ class CodeExtractor:
         """Extract code from markdown code blocks"""
         # Pattern 1: ```language\ncode\n```
         # Pattern 2: ```\ncode\n```
-        # Pattern 3: # FILE: filename\ncode
+        # Pattern 3: filename\n```language\ncode\n```
+        # Pattern 4: # FILE: filename\ncode
 
         patterns = [
-            # Standard code block with language
+            # Standard code block with language (capture content only)
             r'```(?:python|py|html|css|javascript|js|json|markdown|md|txt|sql)?\s*\n(.*?)```',
             # Code block without language
             r'```\n(.*?)```',
+            # Filename followed by code block (common LLM pattern)
+            r'[a-zA-Z_/][a-zA-Z0-9_/]*\.(?:py|html|css|js)\s*\n```(?:python|py|html|css|javascript|js)?\s*\n(.*?)```',
             # FILE: marker
             r'#\s*FILE:\s*[^\n]+\n(.*?)(?:```|$)',
             # file: marker (lowercase)
             r'#\s*file:\s*[^\n]+\n(.*?)(?:```|$)',
         ]
 
+        all_matches = []
         for pattern in patterns:
             matches = re.findall(pattern, response, re.DOTALL | re.IGNORECASE)
-            if matches:
-                # Return the longest match (most complete code block)
-                best_match = max(matches, key=len)
-                return best_match.strip()
+            all_matches.extend(matches)
+
+        if all_matches:
+            # Return the longest match (most complete code block)
+            best_match = max(all_matches, key=len)
+            return best_match.strip()
 
         return None
 
@@ -136,14 +142,38 @@ class CodeExtractor:
 
         return None
 
+    # Garbage patterns that leak from LLM context
+    GARBAGE_PATTERNS = [
+        r'^leted\s*$',  # Fragment of "completed"
+        r'^Completed?\s*$',
+        r'^Code:\s*',
+        r'^File:\s*',
+        r'^Output:\s*$',
+        r'^Result:\s*$',
+        r'^Generated:\s*$',
+        r'^---+\s*$',
+        r'^Step \d+',
+        r'^\*\*Step',
+        r'^templates/',
+        r'^static/',
+        r'^✓',
+        r'^✗',
+        r'^\s*\.html\s*$',  # Standalone ".html"
+        r'^\s*\.css\s*$',   # Standalone ".css"
+        r'^\s*\.js\s*$',    # Standalone ".js"
+    ]
+
     def _clean_code(self, code: str, file_ext: str) -> str:
         """Clean extracted code of common artifacts"""
         lines = code.split('\n')
         cleaned_lines = []
 
+        # Track if we've found actual code yet
+        found_code = False
+
         for i, line in enumerate(lines):
-            # Skip filename-only lines at the start
-            if i == 0 and self._is_filename_line(line):
+            # Skip filename-only lines at the start (first 5 lines)
+            if i < 5 and self._is_filename_line(line):
                 continue
 
             # Skip markdown code block markers
@@ -155,13 +185,39 @@ class CodeExtractor:
                 continue
 
             # Skip lines that are just the filename
-            if i < 3 and line.strip() in [
+            if i < 5 and line.strip() in [
                 'app.py', 'index.html', 'style.css', 'script.js',
-                'app.js', 'main.py', 'requirements.txt', 'README.md'
+                'app.js', 'main.py', 'requirements.txt', 'README.md',
+                'models.py', 'init_db.py', 'config.py', 'utils.py'
             ]:
                 continue
 
-            cleaned_lines.append(line)
+            # Skip garbage patterns (only at start before real code found)
+            if not found_code:
+                is_garbage = False
+                for pattern in self.GARBAGE_PATTERNS:
+                    if re.match(pattern, line, re.IGNORECASE):
+                        is_garbage = True
+                        break
+                if is_garbage:
+                    continue
+
+            # Check if this line looks like actual code
+            if not found_code and line.strip():
+                # For different file types, check if it's real code
+                if file_ext == '.py' and re.match(r'^\s*(from |import |def |class |@|#|"""|\'\'\' |[a-zA-Z_])', line):
+                    found_code = True
+                elif file_ext == '.css' and re.match(r'^\s*([a-zA-Z#.*:@\[]|/\*)', line):
+                    found_code = True
+                elif file_ext == '.js' and re.match(r'^\s*(//|/\*|document\.|window\.|const |let |var |function |class |import |export |async |\()', line):
+                    found_code = True
+                elif file_ext == '.html' and re.match(r'^\s*(<|<!)', line):
+                    found_code = True
+                elif line.strip():  # Any non-empty line for other types
+                    found_code = True
+
+            if found_code or (i > 4):  # After 5 lines, accept everything
+                cleaned_lines.append(line)
 
         # Remove leading/trailing empty lines
         while cleaned_lines and not cleaned_lines[0].strip():
@@ -172,16 +228,26 @@ class CodeExtractor:
         return '\n'.join(cleaned_lines)
 
     def _is_filename_line(self, line: str) -> bool:
-        """Check if line is just a filename"""
+        """Check if line is just a filename or path"""
         stripped = line.strip()
+
         # Common file patterns
         file_patterns = [
             r'^[a-zA-Z_][a-zA-Z0-9_]*\.(py|html|css|js|json|md|txt)$',
             r'^(templates|static)/[a-zA-Z_][a-zA-Z0-9_/]*\.(py|html|css|js)$',
+            r'^static/css/[a-zA-Z_][a-zA-Z0-9_]*\.css$',
+            r'^static/js/[a-zA-Z_][a-zA-Z0-9_]*\.js$',
+            r'^templates/[a-zA-Z_][a-zA-Z0-9_]*\.html$',
         ]
+
         for pattern in file_patterns:
             if re.match(pattern, stripped):
                 return True
+
+        # Also check for lines that are just "filename:" or "# filename"
+        if re.match(r'^#?\s*[a-zA-Z_][a-zA-Z0-9_/]*\.(py|html|css|js):?\s*$', stripped):
+            return True
+
         return False
 
     def _validate_content_type(self, code: str, file_ext: str) -> Tuple[bool, str]:
