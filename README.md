@@ -380,4 +380,4 @@ Codey is made available under a custom "Source Available" license.
 *   **You may:** Use, study, run, and modify the source code for personal or educational purposes.
 *   **You may NOT:** Sell, redistribute for profit, or commercially exploit this software.
 
-See [LICENSE.md](LICENSE.md) for full terms.
+See [LICENSE.md] for full terms.
