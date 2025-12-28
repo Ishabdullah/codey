@@ -128,7 +128,7 @@ def fibonacci(n):
 
 This demo validates that Codey's split-brain architecture (Router + Coder) functions correctly on mobile ARM64 CPUs, effectively managing memory to load the 7B model on-demand.
 
-![Codey Termux Demo](Resized_Codey_screenshot.jpeg)
+![Codey Mobile Demo](Screenshot_20251228_025055_UserLAnd.jpg)
 
 ### Configuration
 Codey auto-generates a `config.json` on first run. Key settings to tune:
