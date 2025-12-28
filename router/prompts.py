@@ -20,6 +20,9 @@ User: create test.py with hello world
 User: write code that prints hello world
 {"intent": "coding_task", "confidence": 0.90, "tool": null, "params": {"task": "print hello world"}, "escalate": "coder"}
 
+User: create directory test
+{"intent": "tool_call", "confidence": 0.95, "tool": "shell", "params": {"command": "mkdir test"}, "escalate": null}
+
 User: open calculator.py file
 {"intent": "tool_call", "confidence": 0.95, "tool": "file", "params": {"filename": "calculator.py", "action": "read"}, "escalate": null}
 
@@ -51,6 +54,7 @@ REGEX_PATTERNS = {
     "tool_call_shell": [
         r"^(mkdir|run|execute|install|pip|python|node|npm)\s+",
         r"^(ls|pwd|cd|cat|echo|tree)\s+",
+        r"create\s+directory",
     ],
 
     "tool_call_file": [

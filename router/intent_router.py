@@ -218,7 +218,7 @@ class IntentRouter(GGUFModel):
         if tool in ('git', 'github'):
             return 'git'
         
-        if tool in ('shell', 'bash', 'terminal', 'cmd', 'command'):
+        if tool in ('shell', 'bash', 'terminal', 'cmd', 'command', 'dir', 'directory'):
             return 'shell'
         
         if tool in ('file', 'read', 'write', 'filesystem', 'fs'):
