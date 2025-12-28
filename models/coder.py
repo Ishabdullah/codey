@@ -110,7 +110,7 @@ RESTRICTIONS:
 
         Args:
             prompt: Input prompt
-            **kwargs: Generation parameters (temperature, max_tokens, stop, etc.)
+            **kwargs: Generation parameters (temperature, max_tokens, stop, stream, etc.)
 
         Returns:
             Generated text
@@ -118,64 +118,182 @@ RESTRICTIONS:
         if not self._loaded or not self._model:
             raise RuntimeError("Model not loaded. Cannot generate.")
 
-        # Extract parameters
+        # Extract parameters - reduced defaults for CPU
         temperature = kwargs.get('temperature', 0.3)
-        max_tokens = kwargs.get('max_tokens', 2048)
+        max_tokens = kwargs.get('max_tokens', 256)  # Reduced from 2048 for CPU
         stop = kwargs.get('stop', None)
+        stream = kwargs.get('stream', True)  # Enable streaming by default
+        timeout_seconds = kwargs.get('timeout', 300)  # 5 minutes default
 
         # Debug logging
         logger.debug("Starting generation...")
-        logger.debug(f"Temperature: {temperature}, Max tokens: {max_tokens}")
+        logger.debug(f"Temperature: {temperature}, Max tokens: {max_tokens}, Stream: {stream}")
         logger.debug(f"Stop sequences: {stop}")
-        logger.debug(f"Prompt preview (first 500 chars): {prompt[:500]}")
         logger.debug(f"Prompt length: {len(prompt)} characters")
-        logger.debug("Calling model inference...")
 
-        # Generate using llama-cpp-python with timeout protection
         import time
-        import signal
-        from contextlib import contextmanager
-
-        @contextmanager
-        def timeout(seconds):
-            def timeout_handler(signum, frame):
-                raise TimeoutError(f"Generation exceeded {seconds} second timeout")
-
-            # Set signal handler (Unix only)
-            old_handler = signal.signal(signal.SIGALRM, timeout_handler)
-            signal.alarm(seconds)
-            try:
-                yield
-            finally:
-                signal.alarm(0)
-                signal.signal(signal.SIGALRM, old_handler)
-
         start_time = time.time()
 
         try:
-            with timeout(120):  # 120 second timeout (CPU inference is slow ~5 tokens/sec)
-                response = self._model(
+            if stream:
+                # Streaming generation - shows progress and avoids timeout issues
+                return self._generate_streaming(
                     prompt,
                     temperature=temperature,
                     max_tokens=max_tokens,
                     stop=stop,
-                    echo=False
+                    timeout_seconds=timeout_seconds
                 )
+            else:
+                # Non-streaming with timeout
+                import signal
+                from contextlib import contextmanager
+
+                @contextmanager
+                def timeout(seconds):
+                    def timeout_handler(signum, frame):
+                        raise TimeoutError(f"Generation exceeded {seconds} second timeout")
+                    old_handler = signal.signal(signal.SIGALRM, timeout_handler)
+                    signal.alarm(seconds)
+                    try:
+                        yield
+                    finally:
+                        signal.alarm(0)
+                        signal.signal(signal.SIGALRM, old_handler)
+
+                with timeout(timeout_seconds):
+                    response = self._model(
+                        prompt,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                        stop=stop,
+                        echo=False
+                    )
+
+                elapsed = time.time() - start_time
+                logger.debug(f"Generation completed in {elapsed:.2f} seconds")
+
+                if isinstance(response, dict) and 'choices' in response:
+                    result = response['choices'][0]['text']
+                    logger.debug(f"Generated {len(result)} characters")
+                    return result
+
+                return str(response)
+
         except TimeoutError as e:
             logger.error(str(e))
-            raise RuntimeError(f"Generation timeout after 120 seconds - check CPU performance")
+            raise RuntimeError(f"Generation timeout after {timeout_seconds} seconds - check CPU performance")
 
-        elapsed = time.time() - start_time
-        logger.debug(f"Generation completed in {elapsed:.2f} seconds")
+    def _generate_streaming(self, prompt: str, temperature: float = 0.3,
+                           max_tokens: int = 256, stop: list = None,
+                           timeout_seconds: int = 300,
+                           target_filename: str = None,
+                           file_tools = None,
+                           workspace_dir = None) -> str:
+        """Generate with streaming for progress feedback and real-time file writing
 
-        # Extract generated text
-        if isinstance(response, dict) and 'choices' in response:
-            result = response['choices'][0]['text']
-            logger.debug(f"Generated {len(result)} characters")
-            logger.debug(f"Response preview (first 200 chars): {result[:200]}")
-            return result
+        Args:
+            prompt: Input prompt
+            temperature: Sampling temperature
+            max_tokens: Maximum tokens to generate
+            stop: Stop sequences
+            timeout_seconds: Maximum generation time
+            target_filename: Optional target filename for streaming write
+            file_tools: Optional FileTools for real-time file writing
+            workspace_dir: Optional workspace directory
 
-        return str(response)
+        Returns:
+            Complete generated text
+        """
+        import time
+        import sys
+        from pathlib import Path
+
+        start_time = time.time()
+        generated_text = ""
+        token_count = 0
+        last_progress_time = start_time
+
+        # Set up streaming file writer if tools provided
+        streaming_writer = None
+        if file_tools and workspace_dir:
+            try:
+                from core.streaming_writer import StreamingFileWriter
+
+                def on_file_start(filename):
+                    print(f"\n   📝 Writing {filename}...", end="", flush=True)
+
+                def on_file_complete(filename, bytes_written):
+                    print(f" ✓ ({bytes_written} bytes)")
+
+                streaming_writer = StreamingFileWriter(
+                    workspace_dir=Path(workspace_dir),
+                    file_tools=file_tools,
+                    on_file_start=on_file_start,
+                    on_file_complete=on_file_complete
+                )
+            except ImportError:
+                logger.debug("StreamingFileWriter not available, using standard streaming")
+
+        try:
+            # Use llama-cpp streaming API
+            stream = self._model(
+                prompt,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                stop=stop or [],
+                echo=False,
+                stream=True
+            )
+
+            for chunk in stream:
+                # Check timeout
+                elapsed = time.time() - start_time
+                if elapsed > timeout_seconds:
+                    logger.warning(f"Streaming timeout after {elapsed:.1f}s with {token_count} tokens")
+                    break
+
+                # Extract token from chunk
+                if 'choices' in chunk and chunk['choices']:
+                    token_text = chunk['choices'][0].get('text', '')
+                    if token_text:
+                        generated_text += token_text
+                        token_count += 1
+
+                        # Process through streaming writer for real-time file writing
+                        if streaming_writer:
+                            streaming_writer.process_token(token_text, target_filename)
+
+                        # Show progress every 2 seconds
+                        current_time = time.time()
+                        if current_time - last_progress_time >= 2.0:
+                            tps = token_count / (current_time - start_time)
+                            print(f"\r   → {token_count} tokens ({tps:.1f} tok/s)", end="", flush=True)
+                            last_progress_time = current_time
+
+            # Flush streaming writer
+            if streaming_writer:
+                streaming_writer.flush(target_filename)
+
+            # Final stats
+            elapsed = time.time() - start_time
+            if token_count > 0:
+                tps = token_count / elapsed
+                print(f"\r   → {token_count} tokens in {elapsed:.1f}s ({tps:.1f} tok/s)   ")
+
+            logger.debug(f"Streaming complete: {token_count} tokens in {elapsed:.1f}s")
+            return generated_text
+
+        except Exception as e:
+            logger.error(f"Streaming generation error: {e}")
+            # Flush writer on error
+            if streaming_writer:
+                streaming_writer.flush(target_filename)
+            # Return whatever we generated so far
+            if generated_text:
+                logger.info(f"Returning partial result: {len(generated_text)} chars")
+                return generated_text
+            raise
 
     def generate_code(self, task: CodingTask) -> CodeResult:
         """Generate or modify code based on task
@@ -401,14 +519,31 @@ Review:"""
         # Sanitize instructions to remove any router artifacts
         instructions = self._sanitize_instructions(task.instructions)
 
+        # Detect web application context
+        is_web_app = any(kw in instructions.lower() for kw in ['flask', 'django', 'fastapi', 'html', 'css', 'javascript', 'frontend', 'backend', 'web app'])
+        
+        web_instructions = ""
+        if is_web_app:
+            web_instructions = """
+WEB DEVELOPMENT REQUIREMENTS:
+1. Frontend: Generate separate files for HTML, CSS, and JavaScript. 
+   - Use standard structure: templates/index.html, static/css/style.css, static/js/script.js
+   - Include forms, buttons, and client-side logic (fetch/axios) to interact with the backend.
+2. Backend: Include proper error handling (try/except) and input validation.
+   - Validate JSON data in routes.
+   - Return appropriate HTTP status codes (400 for bad input, 500 for server errors).
+3. Database: If using SQLite, include schema creation and CRUD operations.
+4. README: Generate a README.md with setup and running instructions.
+"""
+
         # Ultra-simplified prompt format
         if task.task_type == "create":
             # Very simple and direct prompt
-            prompt = f"Write {task.language} code for: {instructions}\n\nCode:"
+            prompt = f"Write {task.language} code for: {instructions}\n{web_instructions}\nCode:"
             return prompt
 
         elif task.task_type == "edit":
-            prompt_parts = [f"Edit {task.language} code: {instructions}\n\n"]
+            prompt_parts = [f"Edit {task.language} code: {instructions}\n{web_instructions}\n"]
 
             if task.existing_code:
                 for filename, content in task.existing_code.items():
@@ -418,7 +553,7 @@ Review:"""
             return "".join(prompt_parts)
 
         elif task.task_type == "refactor":
-            prompt_parts = [f"Refactor {task.language} code: {instructions}\n\n"]
+            prompt_parts = [f"Refactor {task.language} code: {instructions}\n{web_instructions}\n"]
 
             if task.existing_code:
                 for filename, content in task.existing_code.items():
@@ -428,7 +563,7 @@ Review:"""
             return "".join(prompt_parts)
 
         elif task.task_type == "fix":
-            prompt_parts = [f"Fix this {task.language} code: {instructions}\n\n"]
+            prompt_parts = [f"Fix this {task.language} code: {instructions}\n{web_instructions}\n"]
 
             if task.existing_code:
                 for filename, content in task.existing_code.items():
@@ -438,7 +573,7 @@ Review:"""
             return "".join(prompt_parts)
 
         # Fallback
-        return f"Write {task.language} code: {instructions}\n\n```{task.language}\n"
+        return f"Write {task.language} code: {instructions}\n{web_instructions}\n```{task.language}\n"
 
     def _parse_code_response(self, response: str, task: CodingTask) -> CodeResult:
         """Parse model response into CodeResult

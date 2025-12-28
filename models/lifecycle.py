@@ -1,10 +1,18 @@
-"""Model Lifecycle Manager for multi-model support"""
+"""Model Lifecycle Manager for multi-model support
+
+Enhanced for Phase 6 with:
+- Smart model caching and preloading
+- Reduced model switching overhead
+- Memory-aware loading strategies
+- Intent-based preloading hints
+"""
 from enum import Enum
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List, Callable
 from pathlib import Path
 import gc
 import time
-from threading import Lock
+from threading import Lock, Thread
+import logging
 
 try:
     from llama_cpp import Llama
@@ -15,6 +23,8 @@ except ImportError:
     sys.exit(1)
 
 from models.base import BaseModel
+
+logger = logging.getLogger(__name__)
 
 
 class ModelRole(Enum):
@@ -383,3 +393,244 @@ class ModelLifecycleManager:
             'loaded': model.loaded,
             **model.get_model_info()
         }
+
+    # ============================================================
+    # Phase 6 Enhancements: Smart Caching and Preloading
+    # ============================================================
+
+    def preload_for_intent(self, intent: str) -> None:
+        """Preload model based on predicted intent
+
+        This method can be called after intent classification to
+        start loading the appropriate model in the background.
+
+        Args:
+            intent: Classified intent (coding_task, algorithm_task, etc.)
+        """
+        intent_to_role = {
+            'coding_task': ModelRole.CODER,
+            'algorithm_task': ModelRole.ALGORITHM,
+            'code_generation': ModelRole.CODER,
+            'algorithm': ModelRole.ALGORITHM,
+        }
+
+        role = intent_to_role.get(intent)
+        if role and not self.is_loaded(role):
+            logger.info(f"Preloading {role.value} for intent: {intent}")
+            self._preload_async(role)
+
+    def _preload_async(self, role: ModelRole) -> None:
+        """Start background model loading
+
+        Args:
+            role: ModelRole to preload
+        """
+        def load_in_background():
+            try:
+                self.load_model(role)
+                logger.info(f"Background preload complete: {role.value}")
+            except Exception as e:
+                logger.warning(f"Background preload failed for {role.value}: {e}")
+
+        thread = Thread(target=load_in_background, daemon=True)
+        thread.start()
+
+    def is_loaded(self, role: ModelRole) -> bool:
+        """Check if a model is currently loaded
+
+        Args:
+            role: ModelRole to check
+
+        Returns:
+            True if model is loaded
+        """
+        model = self.models.get(role)
+        return model is not None and model.loaded
+
+    def get_loaded_models(self) -> List[ModelRole]:
+        """Get list of currently loaded models
+
+        Returns:
+            List of loaded ModelRole values
+        """
+        return [role for role in ModelRole if self.is_loaded(role)]
+
+    def optimize_for_task(self, task_type: str) -> None:
+        """Optimize model loading for a specific task type
+
+        This method unloads unnecessary models and preloads
+        required ones based on the task type.
+
+        Args:
+            task_type: Type of task (fullstack, backend, frontend, single_file)
+        """
+        # Task type to required models mapping
+        task_models = {
+            'fullstack': [ModelRole.CODER],  # Coder can handle full-stack
+            'backend': [ModelRole.CODER],
+            'frontend': [ModelRole.CODER],
+            'algorithm': [ModelRole.ALGORITHM],
+            'single_file': [ModelRole.CODER],
+        }
+
+        required = task_models.get(task_type, [ModelRole.CODER])
+
+        # Unload models not needed for this task (except router)
+        for role in ModelRole:
+            if role == ModelRole.ROUTER:
+                continue  # Never unload router
+
+            if role not in required and self.is_loaded(role):
+                logger.info(f"Unloading {role.value} (not needed for {task_type})")
+                self.unload_model(role)
+
+        # Preload required models
+        for role in required:
+            if not self.is_loaded(role):
+                logger.info(f"Preloading {role.value} for {task_type}")
+                try:
+                    self.load_model(role)
+                except Exception as e:
+                    logger.error(f"Failed to preload {role.value}: {e}")
+
+    def get_loading_time_estimate(self, role: ModelRole) -> float:
+        """Estimate time to load a model
+
+        Args:
+            role: ModelRole to estimate
+
+        Returns:
+            Estimated loading time in seconds
+        """
+        if self.is_loaded(role):
+            return 0.0
+
+        # Base estimates for CPU loading
+        estimates = {
+            ModelRole.ROUTER: 5.0,      # Small model, fast load
+            ModelRole.CODER: 30.0,      # 7B model, slower
+            ModelRole.ALGORITHM: 25.0,  # 6.7B model
+        }
+
+        return estimates.get(role, 30.0)
+
+    def get_generation_time_estimate(self, role: ModelRole, tokens: int) -> float:
+        """Estimate generation time for a model
+
+        Args:
+            role: ModelRole to use
+            tokens: Number of tokens to generate
+
+        Returns:
+            Estimated generation time in seconds
+        """
+        # CPU tokens per second estimates
+        tokens_per_second = {
+            ModelRole.ROUTER: 15.0,     # Small, fast
+            ModelRole.CODER: 5.0,       # Large, slower
+            ModelRole.ALGORITHM: 5.0,   # Large, slower
+        }
+
+        tps = tokens_per_second.get(role, 5.0)
+        return tokens / tps
+
+    def can_fit_model(self, role: ModelRole) -> bool:
+        """Check if a model can fit in available memory
+
+        Args:
+            role: ModelRole to check
+
+        Returns:
+            True if model can fit without exceeding budget
+        """
+        if role not in self.model_configs:
+            return False
+
+        config = self.model_configs[role]
+        required_mb = self._estimate_memory_requirement(config['path'])
+
+        usage = self.get_memory_usage()
+        available = usage['available_mb']
+
+        return required_mb <= available
+
+    def smart_load(self, role: ModelRole, force: bool = False) -> Optional[GGUFModel]:
+        """Intelligently load a model with memory management
+
+        This method checks memory availability and unloads other
+        models as needed to make room for the requested model.
+
+        Args:
+            role: ModelRole to load
+            force: If True, force load even if it exceeds budget
+
+        Returns:
+            Loaded model or None if cannot load
+        """
+        if self.is_loaded(role):
+            self._last_used[role] = time.time()
+            return self.models[role]
+
+        if not self.can_fit_model(role) and not force:
+            # Try to free memory
+            logger.info(f"Attempting to free memory for {role.value}")
+            self._enforce_memory_limit(
+                self._estimate_memory_requirement(self.model_configs[role]['path']),
+                exempt_role=role
+            )
+
+        try:
+            return self.load_model(role)
+        except Exception as e:
+            logger.error(f"Smart load failed for {role.value}: {e}")
+            return None
+
+    def switch_model(self, from_role: ModelRole, to_role: ModelRole) -> Optional[GGUFModel]:
+        """Switch from one model to another efficiently
+
+        Args:
+            from_role: Model to unload
+            to_role: Model to load
+
+        Returns:
+            Newly loaded model
+        """
+        if from_role == to_role:
+            return self.ensure_loaded(to_role)
+
+        # Don't unload always-resident models
+        from_config = self.model_configs.get(from_role, {})
+        if not from_config.get('always_resident', False):
+            logger.info(f"Switching from {from_role.value} to {to_role.value}")
+            self.unload_model(from_role)
+
+        return self.load_model(to_role)
+
+    def with_model(self, role: ModelRole):
+        """Context manager for temporary model usage
+
+        Usage:
+            with lifecycle.with_model(ModelRole.CODER) as coder:
+                result = coder.generate(prompt)
+
+        Args:
+            role: ModelRole to use
+
+        Returns:
+            Context manager yielding the model
+        """
+        class ModelContext:
+            def __init__(ctx, manager, role):
+                ctx.manager = manager
+                ctx.role = role
+                ctx.model = None
+
+            def __enter__(ctx):
+                ctx.model = ctx.manager.ensure_loaded(ctx.role)
+                return ctx.model
+
+            def __exit__(ctx, exc_type, exc_val, exc_tb):
+                # Don't unload on exit - let LRU handle it
+                pass
+
+        return ModelContext(self, role)

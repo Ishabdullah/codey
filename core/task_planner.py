@@ -3,11 +3,17 @@
 This module handles multi-step instruction planning, breaking down
 complex user requests into sequential or parallel subtasks.
 
-Part of Phase 4: Engine Decomposition
+Enhanced in Phase 6 for:
+- Full-stack application decomposition
+- CPU-aware chunking with token budgets
+- README auto-generation after completion
+
+Part of Phase 4: Engine Decomposition (Enhanced Phase 6)
 """
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass, field
 from enum import Enum
+import re
 
 
 class TaskType(Enum):
@@ -369,3 +375,218 @@ class TaskPlanner:
             summary += f"  ⏳ Pending: {pending}\n"
 
         return summary
+
+    # ============================================================
+    # Phase 6 Enhancements: Full-stack App Decomposition
+    # ============================================================
+
+    def is_fullstack_app(self, user_input: str) -> bool:
+        """Check if request is for a full-stack application
+
+        Args:
+            user_input: User's request
+
+        Returns:
+            True if full-stack app generation is needed
+        """
+        user_lower = user_input.lower()
+
+        # Explicit full-stack keywords
+        fullstack_keywords = [
+            'full-stack', 'fullstack', 'full stack',
+            'frontend and backend', 'backend and frontend',
+            'web app', 'web application', 'complete app',
+            'rest api with ui', 'api with frontend'
+        ]
+
+        if any(kw in user_lower for kw in fullstack_keywords):
+            return True
+
+        # Check for combination of backend + frontend indicators
+        has_backend = any(kw in user_lower for kw in [
+            'flask', 'fastapi', 'django', 'backend', 'api', 'server',
+            'rest', 'endpoint', 'route'
+        ])
+
+        has_frontend = any(kw in user_lower for kw in [
+            'html', 'frontend', 'ui', 'interface', 'webpage', 'page',
+            'form', 'button', 'react', 'vue'
+        ])
+
+        return has_backend and has_frontend
+
+    def decompose_fullstack(self, user_input: str) -> TaskPlan:
+        """Decompose full-stack app request into manageable chunks
+
+        This creates a plan with appropriately sized chunks to avoid
+        timeout issues on CPU-only hardware.
+
+        Args:
+            user_input: User's request
+
+        Returns:
+            TaskPlan with chunked steps
+        """
+        steps = []
+        user_lower = user_input.lower()
+
+        # Detect features
+        has_database = any(kw in user_lower for kw in [
+            'database', 'sqlite', 'db', 'sql', 'crud', 'storage', 'persist'
+        ])
+
+        has_auth = any(kw in user_lower for kw in [
+            'auth', 'login', 'user', 'password', 'session'
+        ])
+
+        # Step 1: Database schema (if needed)
+        if has_database:
+            steps.append(TaskStep(
+                step_id=len(steps) + 1,
+                task_type=TaskType.CODE_GEN,
+                description="Create database models and schema (models.py)",
+                params={'file': 'models.py', 'max_tokens': 256}
+            ))
+
+        # Step 2: Backend app initialization
+        steps.append(TaskStep(
+            step_id=len(steps) + 1,
+            task_type=TaskType.CODE_GEN,
+            description=f"Create backend app with routes (app.py) - {user_input[:50]}",
+            params={'file': 'app.py', 'max_tokens': 384}
+        ))
+
+        # Step 3: Database init (if needed)
+        if has_database:
+            steps.append(TaskStep(
+                step_id=len(steps) + 1,
+                task_type=TaskType.CODE_GEN,
+                description="Create database initialization script (init_db.py)",
+                params={'file': 'init_db.py', 'max_tokens': 128},
+                dependencies=[1]  # Depends on models
+            ))
+
+        # Step 4: Create directories for frontend
+        steps.append(TaskStep(
+            step_id=len(steps) + 1,
+            task_type=TaskType.TOOL_CALL,
+            description="Create templates and static directories",
+            params={'tool': 'shell', 'command': 'mkdir -p templates static/css static/js'}
+        ))
+
+        # Step 5: HTML template
+        steps.append(TaskStep(
+            step_id=len(steps) + 1,
+            task_type=TaskType.CODE_GEN,
+            description="Create HTML template (templates/index.html)",
+            params={'file': 'templates/index.html', 'max_tokens': 384}
+        ))
+
+        # Step 6: CSS styles
+        steps.append(TaskStep(
+            step_id=len(steps) + 1,
+            task_type=TaskType.CODE_GEN,
+            description="Create CSS styles (static/css/style.css)",
+            params={'file': 'static/css/style.css', 'max_tokens': 256}
+        ))
+
+        # Step 7: JavaScript client
+        steps.append(TaskStep(
+            step_id=len(steps) + 1,
+            task_type=TaskType.CODE_GEN,
+            description="Create JavaScript client (static/js/app.js)",
+            params={'file': 'static/js/app.js', 'max_tokens': 384}
+        ))
+
+        # Step 8: Requirements file
+        steps.append(TaskStep(
+            step_id=len(steps) + 1,
+            task_type=TaskType.CODE_GEN,
+            description="Create requirements.txt",
+            params={'file': 'requirements.txt', 'max_tokens': 64}
+        ))
+
+        # Step 9: README
+        steps.append(TaskStep(
+            step_id=len(steps) + 1,
+            task_type=TaskType.CODE_GEN,
+            description="Generate README.md with setup instructions",
+            params={'file': 'README.md', 'max_tokens': 256, 'is_readme': True}
+        ))
+
+        # Calculate execution order (respecting dependencies)
+        execution_order = [step.step_id for step in steps]
+
+        return TaskPlan(
+            original_request=user_input,
+            steps=steps,
+            execution_order=execution_order,
+            is_sequential=True,
+            metadata={
+                'is_fullstack': True,
+                'has_database': has_database,
+                'has_auth': has_auth,
+                'total_chunks': len(steps),
+                'estimated_tokens': sum(s.params.get('max_tokens', 256) for s in steps)
+            }
+        )
+
+    def estimate_generation_time(self, plan: TaskPlan, tokens_per_second: float = 5.0) -> float:
+        """Estimate total generation time for a plan
+
+        Args:
+            plan: TaskPlan to estimate
+            tokens_per_second: Expected generation speed on CPU
+
+        Returns:
+            Estimated time in seconds
+        """
+        total_tokens = 0
+
+        for step in plan.steps:
+            if step.task_type == TaskType.CODE_GEN:
+                total_tokens += step.params.get('max_tokens', 256)
+
+        return total_tokens / tokens_per_second
+
+    def get_generated_files(self, plan: TaskPlan) -> List[str]:
+        """Get list of files that will be generated
+
+        Args:
+            plan: TaskPlan to inspect
+
+        Returns:
+            List of filenames
+        """
+        files = []
+        for step in plan.steps:
+            if step.task_type == TaskType.CODE_GEN:
+                filename = step.params.get('file')
+                if filename:
+                    files.append(filename)
+        return files
+
+    def create_readme_step(self, plan: TaskPlan) -> TaskStep:
+        """Create a README generation step based on completed plan
+
+        Args:
+            plan: Completed TaskPlan
+
+        Returns:
+            TaskStep for README generation
+        """
+        generated_files = self.get_generated_files(plan)
+        completed = [s for s in plan.steps if s.status == StepStatus.COMPLETED]
+
+        return TaskStep(
+            step_id=len(plan.steps) + 1,
+            task_type=TaskType.CODE_GEN,
+            description=f"Generate README.md for: {plan.original_request[:30]}...",
+            params={
+                'file': 'README.md',
+                'max_tokens': 256,
+                'is_readme': True,
+                'generated_files': generated_files,
+                'task_summary': plan.original_request
+            }
+        )

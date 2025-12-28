@@ -1,8 +1,10 @@
 """Tool system for file operations and code manipulation"""
 import os
 import shutil
+import sqlite3
 from pathlib import Path
 from datetime import datetime
+from typing import List, Dict, Any, Optional
 
 class FileTools:
     """Tools for safe file operations"""
@@ -220,4 +222,104 @@ class FileTools:
                 'success': False,
                 'error': f"Failed to apply edits: {str(e)}",
                 'path': str(self._resolve_path(filepath))
+            }
+
+
+class SQLiteTools:
+    """Tools for SQLite database operations"""
+
+    def __init__(self, config):
+        self.config = config
+        self.workspace = config.workspace_dir
+
+    def _resolve_path(self, db_path):
+        """Resolve database path relative to workspace"""
+        path = Path(db_path)
+        if not path.is_absolute():
+            path = self.workspace / path
+        return path
+
+    def execute_query(self, db_path: str, query: str, params: Optional[tuple] = None) -> Dict[str, Any]:
+        """Execute a SQL query"""
+        path = self._resolve_path(db_path)
+        
+        # Create directory if it doesn't exist (for new databases)
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        try:
+            with sqlite3.connect(path) as conn:
+                cursor = conn.cursor()
+                if params:
+                    cursor.execute(query, params)
+                else:
+                    cursor.execute(query)
+                
+                # Commit changes
+                conn.commit()
+                
+                # Get results for SELECT queries
+                result = None
+                if cursor.description:
+                    columns = [description[0] for description in cursor.description]
+                    rows = cursor.fetchall()
+                    result = [dict(zip(columns, row)) for row in rows]
+                
+                return {
+                    'success': True,
+                    'result': result,
+                    'rowcount': cursor.rowcount,
+                    'path': str(path)
+                }
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e),
+                'path': str(path)
+            }
+
+    def get_schema(self, db_path: str) -> Dict[str, Any]:
+        """Get database schema (tables and columns)"""
+        path = self._resolve_path(db_path)
+        
+        if not path.exists():
+            return {
+                'success': False,
+                'error': f"Database not found: {db_path}",
+                'path': str(path)
+            }
+
+        try:
+            with sqlite3.connect(path) as conn:
+                cursor = conn.cursor()
+                
+                # Get tables
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+                tables = [row[0] for row in cursor.fetchall()]
+                
+                schema = {}
+                for table in tables:
+                    cursor.execute(f"PRAGMA table_info({table});")
+                    columns = cursor.fetchall()
+                    schema[table] = [
+                        {
+                            'cid': col[0],
+                            'name': col[1],
+                            'type': col[2],
+                            'notnull': col[3],
+                            'dflt_value': col[4],
+                            'pk': col[5]
+                        }
+                        for col in columns
+                    ]
+                
+                return {
+                    'success': True,
+                    'schema': schema,
+                    'path': str(path)
+                }
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e),
+                'path': str(path)
             }

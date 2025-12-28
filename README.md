@@ -1,8 +1,8 @@
 # Codey: The Local, CPU-Optimized AI Engineer
 
-> **Version:** 3.0 (Audited)
-> **Architecture:** Local Multi-Model Orchestration
-> **Focus:** Privacy, Zero-Cloud Dependency, Efficiency
+> **Version:** 3.2 (Phase 6: CPU Optimization + Real-Time Streaming)
+> **Architecture:** Local Multi-Model Orchestration with Chunked Execution
+> **Focus:** Privacy, Zero-Cloud Dependency, CPU-Optimized Generation, Real-Time File Output
 
 Codey is a command-line AI software engineer designed to run **entirely on your local machine**. Unlike cloud-based assistants that rely on massive server farms, Codey runs on standard consumer hardware, including high-end mobile devices via Termux or UserLAnd. It maintains complete data privacy by ensuring no code or telemetry ever leaves your machine.
 
@@ -26,6 +26,7 @@ Codey is built upon three core principles regarding local AI execution:
 *   **Plans Tasks:** Decomposes complex instructions (e.g., "create a react app") into executable steps.
 *   **Manages Git:** Handles commits, status checks, and history.
 *   **Optimizes Resources:** Enforces strict RAM budgeting to prevent operating system slowdowns.
+*   **Builds Full-Stack Apps:** Generates complete web applications including backend (Flask/Django), frontend (HTML/CSS/JS), and database (SQLite) code.
 
 ### What Codey Is Not
 *   **Instant:** On a CPU, inference takes time. Generating a complex function requires patience (often 30-60 seconds).
@@ -61,7 +62,7 @@ Codey uses a Split-Brain Architecture to balance latency and intelligence:
 
 Codey employs a strict tool execution policy to prevent hallucinated actions:
 
-*   **Registry:** Only explicitly defined tools (`git`, `shell`, `file`) are executable.
+*   **Registry:** Only explicitly defined tools (`git`, `shell`, `file`, `sqlite`) are executable.
 *   **Safety Fallback:** If the Intent Router predicts a tool that doesn't exist (e.g., "tool: fix_code"), the system automatically intercepts this error and redirects the request to the general coding or Q&A path.
 *   **Normalization:** Aliases are automatically mapped (e.g., "read" → "file", "terminal" → "shell") to handle natural language variations.
 
@@ -177,6 +178,115 @@ Codey decomposes these into a sequence of actions.
 > 1. git pull 2. run tests 3. if pass, git push
 ```
 
+**4. Full-Stack Development (Phase 6 Enhanced)**
+Codey handles web application generation with frontend and backend components, automatically chunking the generation to avoid timeouts.
+```text
+> Create a full-stack todo app with Flask backend and SQLite database
+> Build a web application with user authentication and a dashboard
+```
+
+**Example Output:**
+```text
+📋 Full-stack generation plan:
+   Chunks: 8
+   Estimated tokens: 2048
+   Estimated time: 410s
+   Database: Yes
+--------------------------------------------------
+⚙️  [1/8] Generating: Database models...  ✓ (45.2s)
+⚙️  [2/8] Generating: Backend app...      ✓ (62.1s)
+⚙️  [3/8] Generating: Database init...    ✓ (18.3s)
+🖥️  [4/8] Creating directories...         ✓ (0.1s)
+⚙️  [5/8] Generating: HTML template...    ✓ (55.8s)
+⚙️  [6/8] Generating: CSS styles...       ✓ (35.2s)
+⚙️  [7/8] Generating: JavaScript...       ✓ (48.6s)
+📖  [8/8] Generating: README...            ✓ (2.1s)
+
+✓ Task completed successfully!
+  Total time: 267.4s
+  Progress: 100%
+
+📁 Generated Files:
+  - models.py
+  - app.py
+  - init_db.py
+  - templates/index.html
+  - static/css/style.css
+  - static/js/app.js
+  - README.md
+```
+
+---
+
+## Phase 6: CPU Optimization Features
+
+Phase 6 introduces major optimizations for CPU-only hardware:
+
+### Real-Time Streaming Output
+Files are created **as tokens are generated**, not after completion:
+
+```text
+⚙️  Generating code...
+   📝 Writing app.py... ✓ (1243 bytes)
+   📝 Writing templates/index.html... ✓ (892 bytes)
+   📝 Writing static/css/style.css... ✓ (567 bytes)
+   → 156 tokens in 31.2s (5.0 tok/s)
+```
+
+Benefits:
+- **Immediate file access**: Open files before generation completes
+- **Reduced memory**: Content written to disk immediately
+- **Better UX**: See progress in real-time
+
+### Chunked Task Execution
+Complex tasks are automatically decomposed into smaller, independently executable chunks:
+
+| Chunk Type | Max Tokens | Purpose |
+|------------|------------|---------|
+| `backend_setup` | 256 | Flask/FastAPI app initialization |
+| `backend_routes` | 384 | API routes and endpoints |
+| `database_schema` | 192 | SQLite models and schema |
+| `frontend_html` | 384 | HTML templates |
+| `frontend_css` | 256 | CSS styles |
+| `frontend_js` | 384 | JavaScript client logic |
+| `readme` | 256 | Project documentation |
+
+### Extended Timeouts for CPU
+Default timeout increased from 120s to 300s (5 minutes) to accommodate CPU inference speeds.
+
+### Progress Tracking
+Real-time progress reporting during long-running operations:
+
+```text
+# Automatic progress display
+🔍 Analyzing request...              ✓ (0.2s)
+📦 Loading model: Qwen2.5-Coder...   ✓ (28.3s)
+🧩 Generating chunk 1/5...           ✓ (42.1s)
+   → Progress: 100/256 tokens (39%)
+   → Speed: 4.8 tok/s
+```
+
+### Smart Model Caching
+- **Intent-based preloading**: Models are loaded based on predicted task type
+- **Memory-aware switching**: Automatic unloading of unused models
+- **LRU eviction**: Least-recently-used models are unloaded first
+
+### Improved mkdir Handling
+Properly handles `mkdir -p` flag and multiple directories:
+```bash
+mkdir -p templates static/css static/js
+# Creates all directories with parents as needed
+```
+
+### README Auto-Generation
+Automatically generates project documentation:
+- Project structure
+- Installation instructions
+- Usage examples
+- API endpoint documentation (for web apps)
+
+---
+
 ## Performance Tuning
 
 Running LLMs on CPU requires understanding the bottlenecks:
@@ -222,6 +332,7 @@ Codey supports a variety of local tools to enhance your development workflow. Th
 | **File Management** | `file` | Read, write, list, and delete files in your workspace. | [`read config.json`](#example-workflows), `list files` |
 | **Git** | `git` | Full version control integration. | [`git status`](#example-workflows), `git commit` |
 | **Shell** | `shell` | Execute safe system commands. | `run tests.py`, `mkdir build`, `install numpy` |
+| **Database** | `sqlite` | Local database operations. | `sqlite schema users.db`, `sqlite query users.db "SELECT * FROM users"` |
 | **Testing** | `pytest` | Run test suites (via shell). | `run pytest tests/` |
 | **Documentation** | `pydoc` | View Python documentation (via shell). | `run pydoc -b` |
 | **Search** | `grep` | Search codebase (via shell). | `execute grep -r "TODO" .` |
@@ -238,9 +349,18 @@ Codey evolves by focusing on achievable milestones that respect local hardware c
 *   **Lifecycle Management:** Strict RAM budgeting and LRU model unloading.
 *   **Mobile Support:** Validated on Android via Termux/UserLAnd.
 *   **Tool Safety:** Strict registry and regex fallback for robustness.
+*   **Phase 6: CPU Optimization (v3.1-3.2):**
+    *   **Real-Time Streaming File Output (v3.2):** Files are written as tokens are generated, not after completion.
+    *   **Extended Timeouts (v3.2):** Default generation timeout increased from 120s to 300s for CPU inference.
+    *   **Chunked Task Execution:** Breaks complex multi-step tasks into smaller, independently executable chunks.
+    *   **Full-Stack App Decomposition:** Intelligently decomposes "create a full-stack app" requests into manageable chunks (backend, frontend, database, README).
+    *   **Progress Tracking:** Real-time step-by-step reporting during long-running operations.
+    *   **Smart Model Caching:** Intent-based preloading and memory-aware model switching.
+    *   **Safe Tool Execution:** Tool aliases, retry logic, and automatic fallbacks.
+    *   **Improved mkdir Handling (v3.2):** Properly handles `-p` flag and multiple directories.
+    *   **README Auto-Generation:** Automatically generates project documentation after multi-step completions.
 
-### 🟡 Near Term (v3.1 - v3.5)
-*   **Streaming Output:** Implement token streaming to reduce perceived latency (eliminating the 30s "thinking" pause).
+### 🟡 Near Term (v3.2 - v3.5)
 *   **Unified Model Strategy:** Merge Algorithm/Coder roles into a single 7B model to eliminate reloading times.
 *   **Smart Context:** Implement a sliding window or summary mechanism for long conversations.
 

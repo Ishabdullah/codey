@@ -338,6 +338,27 @@ Answer:"""
             step(ThinkingStep.ROUTING, "algorithm specialist")
             return self._escalate_to_algorithm(task, user_input, result)
 
+        # Save generated files to disk
+        if result.success and result.code:
+            with thinking(ThinkingStep.EXECUTING_TOOL, "Saving files"):
+                for filename, content in result.code.items():
+                    # Determine overwrite based on task type
+                    overwrite = task.task_type in ['edit', 'fix', 'refactor']
+                    
+                    save_result = self.tools.execute("file", {
+                        "action": "write",
+                        "filename": filename,
+                        "content": content,
+                        "overwrite": overwrite
+                    })
+                    
+                    if not save_result.success:
+                        substep(f"Failed to save {filename}: {save_result.error}")
+                        # Append error to result warnings
+                        result.warnings.append(f"Failed to save {filename}: {save_result.error}")
+                    else:
+                        substep(f"Saved {filename}")
+
         complete("Code generated successfully")
         # Format and return result
         return self._format_code_result(result, task)
