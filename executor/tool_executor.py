@@ -308,21 +308,59 @@ class ToolExecutor:
             # Handle multiple directories separated by space
             directories = directory.split()
 
-            # Create each directory
-            results = []
-            all_success = True
-            for dir_name in directories:
-                result = self.shell.create_directory(dir_name, parents=parents)
-                results.append(result)
-                if not result.get('success', False):
-                    all_success = False
+            # For multiple directories, use batch permission
+            if len(directories) > 1:
+                # Request batch permission once for all directories
+                if not self.permissions.request_multiple_file_operation(
+                    f"Create {len(directories)} directories",
+                    directories
+                ):
+                    return ToolResult(
+                        success=False,
+                        error="Permission denied by user",
+                        tool="shell",
+                        action="mkdir"
+                    )
 
-            return ToolResult(
-                success=all_success,
-                output={'directories': directories, 'results': results},
-                tool="shell",
-                action="mkdir"
-            )
+                # Create each directory without individual permission prompts
+                results = []
+                all_success = True
+                for dir_name in directories:
+                    try:
+                        # Resolve path
+                        from pathlib import Path
+                        if dir_name.startswith('~'):
+                            dir_path = Path(dir_name).expanduser()
+                        elif Path(dir_name).is_absolute():
+                            dir_path = Path(dir_name)
+                        else:
+                            dir_path = self.shell.workspace_dir / dir_name
+
+                        # Create directory directly (permission already granted)
+                        if dir_path.exists():
+                            results.append({'success': True, 'message': f'Already exists: {dir_path}'})
+                        else:
+                            dir_path.mkdir(parents=parents, exist_ok=True)
+                            results.append({'success': True, 'path': str(dir_path)})
+                    except Exception as e:
+                        results.append({'success': False, 'error': str(e)})
+                        all_success = False
+
+                return ToolResult(
+                    success=all_success,
+                    output={'directories': directories, 'results': results},
+                    tool="shell",
+                    action="mkdir"
+                )
+            else:
+                # Single directory - use normal flow
+                result = self.shell.create_directory(directories[0], parents=parents)
+                return ToolResult(
+                    success=result.get('success', False),
+                    output=result,
+                    tool="shell",
+                    action="mkdir"
+                )
 
         # Run Python file
         elif cmd_lower.startswith('run '):

@@ -29,13 +29,27 @@ class FileTools:
         if not path.exists():
             return None
 
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # Use microseconds for uniqueness
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         backup_dir = self.config.log_dir / "backups"
         backup_dir.mkdir(exist_ok=True, parents=True)
 
         backup_path = backup_dir / f"{path.name}.{timestamp}.bak"
-        shutil.copy2(path, backup_path)
-        return backup_path
+
+        # Handle existing backup (add counter if needed)
+        counter = 0
+        while backup_path.exists() and counter < 100:
+            counter += 1
+            backup_path = backup_dir / f"{path.name}.{timestamp}_{counter}.bak"
+
+        try:
+            shutil.copy2(path, backup_path)
+            return backup_path
+        except PermissionError:
+            # If backup fails, continue without backup rather than failing the operation
+            return None
+        except Exception:
+            return None
 
     def read_file(self, filepath):
         """Read and return file contents"""
