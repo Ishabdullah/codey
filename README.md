@@ -102,29 +102,31 @@ python engine_v3.py
 
 #### Example Command Run
 **Device:** Samsung Galaxy S24 Ultra (Termux / UserLAnd)
-**Prompt:** "Create a Python function to calculate Fibonacci numbers"
+**Prompt:** "Create Fibonacci function"
 
 ```text
-> Create a Python function to calculate Fibonacci numbers
+~/codey$ python engine_v3.py
+> Create Fibonacci function
 
-[Init] Engine V3 Initialized
-[Load] Qwen2.5-Coder 7B...
-[Gen] Generating code...
+📦 Loading model: Qwen2.5-Coder 7B...
+✓ Loaded qwen2.5-coder-7b-instruct-q4_k_m.gguf
+⚙️ Generating code...
 
 def fibonacci(n):
     if n <= 0:
-        return []
+        return "Input should be a positive integer"
     elif n == 1:
-        return [0]
-    sequence = [0, 1]
-    while len(sequence) < n:
-        sequence.append(sequence[-1] + sequence[-2])
-    return sequence
-
-[Metrics]
- - Peak RAM: 530 MB
- - Generation Speed: 1.26 tok/s
+        return 0
+    elif n == 2:
+        return 1
+    else:
+        a, b = 0, 1
+        for _ in range(2, n):
+            a, b = b, a + b
+        return b
 ```
+
+This demo validates that Codey's split-brain architecture (Router + Coder) functions correctly on mobile ARM64 CPUs, effectively managing memory to load the 7B model on-demand.
 
 ![Codey Termux Demo](Resized_Codey_screenshot.jpeg)
 
