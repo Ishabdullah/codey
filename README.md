@@ -118,7 +118,7 @@ def fibonacci(n):
  - Generation Speed: 1.26 tok/s
 ```
 
-*[Insert Termux screenshot here]*
+![Codey Termux Demo](Resized_Codey_screenshot.jpeg)
 
 ### Configuration
 Codey auto-generates a `config.json` on first run. Key settings to tune:
