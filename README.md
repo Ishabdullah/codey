@@ -191,6 +191,15 @@ For maintainers reproducing these metrics:
 *   **Speed:** Average `output_tokens / generation_ms` across 3 representative coding tasks.
 *   **Thermals:** Subjective observation of device heat or CPU throttling flags.
 
+## License
+
+Codey is made available under a custom "Source Available" license.
+
+*   **You may:** Use, study, run, and modify the source code for personal or educational purposes.
+*   **You may NOT:** Sell, redistribute for profit, or commercially exploit this software.
+
+See [LICENSE.md](LICENSE.md) for full terms.
+
 ## Future Roadmap
 
 *   **Streaming Output:** To improve perceived latency during generation.
