@@ -94,6 +94,21 @@ class IntentRouter(GGUFModel):
         # Ensure model is loaded
         self._ensure_loaded()
 
+        # PRE-CHECK: Prioritize regex for obvious coding tasks to prevent router hallucination
+        user_lower = user_input.lower().strip()
+        for pattern in REGEX_PATTERNS["coding_task"]:
+            if re.search(pattern, user_lower):
+                filename = self._extract_filename(user_input)
+                logger.debug(f"Pre-check matched coding task: {pattern}")
+                return IntentResult(
+                    intent="coding_task",
+                    confidence=1.0,
+                    params={"filename": filename, "task": user_input},
+                    escalate_to="coder",
+                    raw_response="regex_precheck",
+                    used_fallback=True
+                )
+
         # Generate classification prompt
         prompt = get_intent_prompt(user_input, context)
 
